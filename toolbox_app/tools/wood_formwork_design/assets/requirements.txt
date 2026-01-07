@@ -1,0 +1,4 @@
+dash>=2.0
+pandas>=1.5
+numpy>=1.20
+reportlab>=3.6

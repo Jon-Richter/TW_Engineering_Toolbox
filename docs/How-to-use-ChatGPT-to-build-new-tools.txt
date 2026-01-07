@@ -1,0 +1,151 @@
+**Start new Tool from Scratch**
+
+When starting a new tool, give the model one paragraph describing:
+-the engineering problem,
+-governing code or equations,
+-expected inputs/outputs.
+
+**Golden Prompt**
+
+You are designing a brand-new tool for my Python Qt “Engineering Toolbox” framework.
+
+CONTEXT
+- The toolbox is a Qt desktop app (PySide6) with:
+  - A smart Home screen (search, categories, recents)
+  - Plugin discovery under: toolbox_app/tools/<tool_id>/
+  - Background execution for compute tools
+  - UI-thread execution for tools that open windows or embed web UIs
+- Python version is 3.13.
+- Code folder may be read-only (SharePoint). All outputs/logs must go to:
+  %LOCALAPPDATA%\EngineeringToolbox\...
+- Tool must not require internet, cloud services, or paid hosting.
+
+ARCHITECTURE RULES (IMPORTANT)
+1) Tool must export:
+   TOOL = <instance> in toolbox_app/tools/<tool_id>/__init__.py
+2) Tool instance must define:
+   - meta: ToolMeta(id, name, category, version, description)
+   - InputModel (Pydantic BaseModel) OR InputModel = None
+   - default_inputs() -> dict
+   - run(inputs: dict) -> dict
+3) If the tool opens any Qt window, WebEngine, or embedded UI:
+   - set RUNS_ON_UI_THREAD = True
+   - run() must return immediately after launching UI
+4) Pure computation / file tools:
+   - do NOT set RUNS_ON_UI_THREAD
+   - must run safely in a background thread
+5) Tool logic must NOT live in the GUI layer.
+6) Validation must be done via Pydantic (preferred).
+
+UI EXPECTATIONS
+- Use schema-driven inputs (Pydantic → widgets)
+- Inputs must be typed (float/int/bool/path)
+- Units and assumptions must be explicit
+- Tool must feel “engineering-grade” (deterministic, transparent, debuggable)
+
+OUTPUT / INTEGRATION EXPECTATIONS
+- All generated files go to a user-writable location
+- If relevant, include:
+  - Excel export (.xlsx)
+  - Mathcad handoff (CSV / JSON / assignments TXT)
+- Outputs should be simple primitives and file paths
+
+WHAT I WANT YOU TO PRODUCE
+1) A complete tool folder:
+   toolbox_app/tools/<tool_id>/
+     __init__.py
+     (tool implementation file(s))
+     exports.py (if Excel/Mathcad output exists)
+     README.md (how to use + assumptions + limitations)
+2) Clean, production-ready code compatible with Python 3.13
+3) Minimal dependencies (only add if justified)
+4) A ZIP containing ONLY the folder above, ready to unzip into toolbox_app/tools/
+
+DESIGN QUESTIONS YOU MUST ANSWER IN CODE OR README
+- What assumptions are hard-coded?
+- What inputs are user-controlled vs fixed?
+- What units are used internally?
+- What is intentionally out of scope?
+
+CONSTRAINTS
+- Do NOT implement your own GUI shell (use the toolbox UI)
+- Do NOT block the UI thread
+- Do NOT store state in global variables unless explicitly justified
+- Prefer clarity over cleverness
+
+DELIVERABLE
+- A ZIP file containing the complete tool folder
+- A short summary explaining:
+  - Why this tool runs on UI thread or background
+  - How outputs are intended to be consumed (Excel / Mathcad / PDF / etc.)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+
+**Converting existing tools to Toolbox**
+
+What you should attach each time
+	--HTML: the .html plus any referenced .js/.css/images folders.
+	--Dash/Streamlit: the full folder + entry script.
+	--Vite+React: ideally dist/ (production build). If you only have source, include package.json and I’ll give you a build + packaging plan that avoids Node at runtime.
+
+**Golden Prompt for Converting Tools**
+
+You are converting an existing app into a plug-in tool for my Python Qt “Engineering Toolbox” framework.
+
+CONTEXT
+- The toolbox discovers tools under: toolbox_app/tools/<tool_id>/
+- Each tool must export TOOL = <instance> in toolbox_app/tools/<tool_id>/__init__.py
+- Tool instance must have:
+  - meta: ToolMeta(id, name, category, version, description)
+  - InputModel (optional; can be None)
+  - default_inputs() -> dict (can be empty for embedded UIs)
+  - run(inputs: dict) -> dict (should launch the tool UI and return a status dict)
+- The toolbox code folder may be read-only (SharePoint). All outputs/logs must go to %LOCALAPPDATA%\EngineeringToolbox\...
+- Python version is 3.13. Keep compatibility with 3.13 typing behavior.
+- Goal: minimize new dependencies, minimize debugging, and preserve the existing UI behavior as much as possible.
+
+WHAT I WILL PROVIDE
+- I will upload one of the following:
+  (A) a single HTML file (possibly with referenced assets), OR
+  (B) a Dash app folder, OR
+  (C) a Streamlit app folder, OR
+  (D) a Vite+React build output folder (dist) OR Vite source folder.
+
+YOUR TASK
+1) Identify the best integration approach with the least rework and lowest risk:
+   - HTML: embed in Qt using QWebEngineView (preferred) and keep assets local.
+   - Dash/Streamlit: run locally as a subprocess on a free port and open in embedded WebEngine OR default browser; provide start/stop controls.
+   - Vite+React: if I provide a production build (dist), serve it locally (python http.server or a minimal embedded server) and embed with WebEngine; avoid Node at runtime.
+2) Produce a complete tool module folder named <tool_id> that I can drop into toolbox_app/tools/:
+   toolbox_app/tools/<tool_id>/
+     __init__.py
+     (wrapper code you create)
+     assets/ (all app files go here; preserve relative paths)
+     exports.py (Excel + Mathcad handoff)
+     README.md (exact run steps + dependencies)
+3) Provide “Full wrapper + Excel/Mathcad handoff”:
+   - Add an action toolbar in the wrapper window:
+     - Capture results
+     - Export to Excel (.xlsx)
+     - Mathcad handoff (JSON + CSV + assignments TXT)
+     - Save report HTML (if applicable)
+   - If the app already has a results object in JS/Python, use it. If not, implement a minimal, robust capture:
+     - HTML/React: capture a JSON payload via JS executed in the page (runJavaScript).
+     - Dash/Streamlit: add a small endpoint or file-drop JSON export in the wrapper that the app writes to.
+   - Exports must write only to user-writable paths.
+4) Provide the output as a ZIP file that contains ONLY the folder structure under toolbox_app/tools/<tool_id>/ so I can unzip into my repo and it works immediately.
+5) Also provide:
+   - The exact pip requirements additions needed (if any), keeping them minimal.
+   - Any limitations or assumptions (e.g., “requires PySide6 QtWebEngine”).
+   - A quick verification command: python -c "import toolbox_app.tools.<tool_id> as t; print(t.TOOL.meta)"
+
+CONSTRAINTS
+- Do NOT rewrite the entire UI into native widgets unless I explicitly ask. Preserve the original app as-is wherever possible.
+- Do NOT introduce a database, cloud services, or paid hosting. Everything runs locally.
+- Avoid Node or build tools at runtime. If a build step is required, explain it separately and still deliver a runtime package that does not require Node.
+- Handle pathing correctly when the toolbox folder is synced from OneDrive/SharePoint (spaces in paths, read-only code).
+- Make error handling user-friendly: show message boxes for missing dependencies, missing assets, or capture/export failures.
+
+DELIVERABLE
+- A single ZIP I can unzip into toolbox_app/tools/
+- Code must be production-clean and readable.

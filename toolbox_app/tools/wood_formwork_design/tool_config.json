@@ -1,0 +1,6 @@
+{
+  "entry_script": "formwork_design.py",
+  "host": "127.0.0.1",
+  "port": 0,
+  "open_external_browser": false
+}

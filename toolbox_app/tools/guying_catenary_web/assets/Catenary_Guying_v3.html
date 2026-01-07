@@ -1,0 +1,1576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Guying Analysis - Catenary Analysis (US Units)</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+    :root {
+      --bg-top: #f6f2ea;
+      --bg-bottom: #eef2f7;
+      --surface: #ffffff;
+      --surface-muted: #f8fafc;
+      --ink: #0f172a;
+      --muted: #475569;
+      --accent: #0f766e;
+      --accent-strong: #115e59;
+      --accent-warm: #f59e0b;
+      --line: #d5dde7;
+      --shadow-sm: 0 10px 24px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 22px 48px rgba(15, 23, 42, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Sora", "Trebuchet MS", sans-serif;
+      background:
+        radial-gradient(900px 420px at 8% -10%, rgba(15, 118, 110, 0.18), transparent 60%),
+        radial-gradient(820px 380px at 92% -5%, rgba(245, 158, 11, 0.2), transparent 55%),
+        linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+      min-height: 100vh;
+      line-height: 1.5;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .app {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2.25rem 1.6rem 3rem;
+    }
+
+    .app-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 2rem;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    .app-eyebrow {
+      margin: 0 0 0.35rem;
+      font-size: 0.75rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: var(--accent-strong);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 2.6vw + 1rem, 2.9rem);
+      letter-spacing: -0.02em;
+    }
+
+    .app-subtitle {
+      margin: 0.35rem 0 0;
+      font-size: 1rem;
+      color: var(--muted);
+    }
+
+    h2 {
+      margin: 0 0 0.6rem;
+      font-size: 1.1rem;
+      letter-spacing: 0.01em;
+    }
+
+    h3 {
+      margin: 1rem 0 0.4rem;
+      font-size: 0.98rem;
+      letter-spacing: 0.02em;
+    }
+
+    .section-title {
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      letter-spacing: 0.22em;
+      color: var(--muted);
+      margin-top: 1.1rem;
+    }
+
+    .info-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 0.9rem 1rem;
+      box-shadow: var(--shadow-sm);
+      max-width: 520px;
+    }
+
+    .info-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.25em;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+      gap: 1.6rem;
+      align-items: flex-start;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: 18px;
+      box-shadow: var(--shadow-lg);
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      padding: 1.2rem 1.3rem 1.4rem;
+      position: relative;
+      overflow: hidden;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    .card:nth-child(2) {
+      animation-delay: 0.08s;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(120deg, rgba(15, 118, 110, 0.08), transparent 40%, rgba(245, 158, 11, 0.08));
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    .card > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      margin-top: 0.7rem;
+      color: #2d3748;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    label span.note {
+      display: block;
+      font-weight: 400;
+      letter-spacing: 0;
+      color: var(--muted);
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      margin-top: 0.25rem;
+      font-size: 0.92rem;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--surface-muted);
+      color: var(--ink);
+      box-sizing: border-box;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      font-family: "Sora", "Trebuchet MS", sans-serif;
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.2);
+      background: #ffffff;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+    }
+
+    .btn-bar {
+      margin-top: 0.9rem;
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 0.55rem 1rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), #0891b2);
+      color: #fff;
+      box-shadow: 0 10px 18px rgba(15, 118, 110, 0.2);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.02);
+      box-shadow: 0 14px 24px rgba(15, 118, 110, 0.25);
+    }
+
+    button.secondary {
+      background: #ffffff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+
+    button.secondary:hover {
+      color: var(--accent-strong);
+      border-color: var(--accent);
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: default;
+      transform: none;
+      box-shadow: none;
+    }
+
+    #results {
+      background: rgba(248, 250, 252, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 0.75rem 0.85rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    #results ul {
+      padding-left: 1.2rem;
+      margin: 0.35rem 0 0;
+      font-size: 0.9rem;
+    }
+
+    #results li {
+      margin: 0.15rem 0;
+    }
+
+    #diagramWrapper {
+      position: relative;
+      width: 100%;
+      border-radius: 16px;
+      padding: 0.65rem;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff, #f1f5f9);
+      box-shadow: var(--shadow-sm);
+    }
+
+    #diagramWrapper::after {
+      content: "";
+      position: absolute;
+      inset: 0.65rem;
+      border-radius: 12px;
+      background-image:
+        linear-gradient(rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+      background-size: 24px 24px;
+      pointer-events: none;
+    }
+
+    #diagram {
+      position: relative;
+      z-index: 1;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-radius: 12px;
+      background: #ffffff;
+      width: 100%;
+      height: 360px;
+      display: block;
+    }
+
+    #reportArea {
+      width: 100%;
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 0.85rem;
+      box-sizing: border-box;
+      overflow: auto;
+      background: #ffffff;
+      color: #111827;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Template-style calculation report */
+    .calc-report { font-family: "Sora", "Trebuchet MS", sans-serif; font-size: 11pt; line-height: 1.25; }
+    .calc-report .page { border: 1px solid #1f2937; padding: 12px; margin: 12px 0; background: #fff; }
+    .calc-report .hdr { display: flex; justify-content: space-between; gap: 12px; font-size: 9pt; margin-bottom: 8px; }
+    .calc-report .hdr .right { text-align: right; }
+    .calc-report .title { font-size: 14pt; font-weight: 700; margin: 2px 0 8px; }
+    .calc-report .subtitle { font-size: 10pt; margin: 0 0 6px; }
+    .calc-report .box { border: 1px solid #1f2937; padding: 10px; margin: 10px 0; }
+    .calc-report .box h3 { margin: 0 0 6px; font-size: 11pt; }
+    .calc-report .muted { color: #4b5563; }
+    .calc-report .mono { font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 9.5pt; white-space: pre-wrap; }
+    .calc-report table.kv { width: 100%; border-collapse: collapse; font-size: 10pt; }
+    .calc-report table.kv td { padding: 3px 6px; vertical-align: top; }
+    .calc-report table.kv td.k { width: 50%; font-weight: 600; }
+    .calc-report table.kv tr + tr td { border-top: 1px solid #e5e7eb; }
+    .calc-report .hl { background: #fff2b2; padding: 1px 3px; }
+    .calc-report .small { font-size: 9pt; }
+
+    .note { font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem; }
+    .info-card .note { margin: 0; }
+    .badge { display: inline-block; font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(15, 118, 110, 0.12); color: var(--accent-strong); margin-left: 0.3rem; border: 1px solid rgba(15, 118, 110, 0.2); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 1000px) {
+      .app-header { flex-direction: column; align-items: flex-start; }
+      .container { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .row { grid-template-columns: 1fr; }
+      .app { padding: 1.6rem 1.1rem 2.5rem; }
+      #diagram { height: 320px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div>
+        <p class="app-eyebrow">Engineering Toolbox</p>
+        <h1>Guying Analysis</h1>
+        <p class="app-subtitle">Catenary analysis (US units)</p>
+      </div>
+      <div class="info-card">
+        <div class="info-title">Assumptions and units</div>
+        <p class="note">
+          Units: ft, in, kips, lb/ft, ksi, in^2. Geometry in ft, loads in kips and kips/ft,
+          cable weight input in lb/ft (internally kips/ft). Deflections and sag reported in inches.
+          Pretension T0 is assumed symmetric in plan so the structure is in equilibrium at zero external load.
+        </p>
+      </div>
+    </header>
+    <div class="container">
+    <div class="card">
+      <h2>Inputs</h2>
+      <label>
+        Base condition
+        <span class="badge">Pinned: guy resists overturning; Fixed: cantilever with EI + symmetric guys</span>
+        <select id="baseType">
+          <option value="pinned">Pinned base (no base moment)</option>
+          <option value="fixed">Fixed base (cantilever with EI; pretensioned guys)</option>
+        </select>
+      </label>
+
+      <label>Structure height H [ft]
+        <input type="number" id="H" value="100" step="0.1" />
+      </label>
+
+      <label>
+        Uniform horizontal line load on structure q [kips/ft]<br/>
+        <span class="note" id="qNote">Used for pinned-base statics and fixed-base deflection compatibility.</span>
+        <input type="number" id="q" value="0.5" step="0.01" />
+      </label>
+
+      <label id="eiField">
+        Mast flexural stiffness EI [kip-in^2]<br/>
+        <span class="note">Fixed base only. Converted internally to kip-ft^2 for deflection formulas.</span>
+        <input type="number" id="EI" value="7200000" step="50000" />
+      </label>
+
+      <div class="row">
+        <div>
+          <label>Guy connection height y1 [ft]
+            <input type="number" id="y1" value="70" step="0.1" />
+          </label>
+        </div>
+        <div>
+          <label>Anchor offset x1 [ft]
+            <input type="number" id="x1" value="60" step="0.1" />
+          </label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>2nd level height y2 [ft] (optional)
+            <input type="number" id="y2" value="0" step="0.1" />
+          </label>
+        </div>
+        <div>
+          <label>2nd level anchor offset x2 [ft] (optional)
+            <input type="number" id="x2" value="0" step="0.1" />
+          </label>
+        </div>
+      </div>
+
+      <label>
+        Wire rope size (6x19 IWRC)
+        <select id="ropeSize">
+          <option value="custom">Custom / manual input</option>
+          <option value="3/8">3/8 in</option>
+          <option value="1/2">1/2 in</option>
+          <option value="5/8">5/8 in</option>
+          <option value="3/4">3/4 in</option>
+          <option value="7/8">7/8 in</option>
+          <option value="1">1 in</option>
+        </select>
+      </label>
+      <p class="note">Selecting a rope size will populate A, w, and breaking strength R. You can still override manually.</p>
+
+      <div class="row">
+        <div>
+          <label>Cable area A [in^2]
+            <input type="number" id="A" value="0.182" step="0.001" />
+          </label>
+        </div>
+        <div>
+          <label>Modulus E [ksi]<br/>
+            <span class="note">Typical ~12,000 ksi for 6x19 IWRC wire rope.</span>
+            <input type="number" id="E" value="12000" step="500" />
+          </label>
+        </div>
+      </div>
+
+      <label>
+        Cable weight w [lb/ft of cable]<br/>
+        <span class="note">Internally converted to kips/ft (divide by 1000).</span>
+        <input type="number" id="wCable" value="0.52" step="0.01" />
+      </label>
+
+      <label>
+        Guy pretension T0 [kips]<br/>
+        <span class="note">
+          Symmetric pretension in all directions (structure in equilibrium with no external load).
+          Under wind, the tension-side guy carries the required load in addition to the residual T0.
+        </span>
+        <input type="number" id="T0" value="10" step="0.1" />
+      </label>
+
+      <label>
+        2nd level pretension T0,2 [kips]<br/>
+        <span class="note">Leave 0 to reuse T0.</span>
+        <input type="number" id="T0_2" value="0" step="0.1" />
+      </label>
+
+      <label>
+        Breaking strength (windward cable) [kips]<br/>
+        <span class="note">Used for factor of safety = R_break / T_max,windward. Leave 0 if unknown.</span>
+        <input type="number" id="breakStrength" value="0" step="0.1" />
+      </label>
+
+      <div class="btn-bar">
+        <button id="btnSolve">Solve</button>
+        <button id="btnReport" class="secondary" disabled>Generate calculation report</button>
+        <button id="btnPrint" class="secondary" disabled>Print / Save PDF</button>
+      </div>
+
+      <p class="note">
+        Summary of units:
+        H, y1, x1 in ft; q in kips/ft; T, H in kips;
+        A in in^2; E in ksi; EA in kips; EI in kip-in^2; cable weight input in lb/ft (converted to kips/ft).
+        Deflections and sag are reported in inches.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Results</h2>
+      <div id="results">Enter inputs and click "Solve".</div>
+      <h3 class="section-title">Diagram</h3>
+      <div id="diagramWrapper">
+        <canvas id="diagram"></canvas>
+      </div>
+      <h3 class="section-title">Calculation report</h3>
+      <div class="note">Click "Generate calculation report" for step-by-step backup of the final solution.</div>
+      <div id="reportArea" class="calc-report"></div>
+    </div>
+  </div>
+  </div>
+  <script>
+    // Rope database (6x19 IWRC EIPS typical)
+    const ropeData = {
+      "3/8": { A: 0.104, w: 0.27, R: 14.6 },
+      "1/2": { A: 0.182, w: 0.52, R: 26.6 },
+      "5/8": { A: 0.285, w: 0.81, R: 42.8 },
+      "3/4": { A: 0.409, w: 1.17, R: 61.2 },
+      "7/8": { A: 0.548, w: 1.60, R: 82.3 },
+      "1":   { A: 0.705, w: 2.14, R: 106.0 }
+    };
+
+    function num(id) { const v = parseFloat(document.getElementById(id).value); return isFinite(v) ? v : 0; }
+    function fmt(x, digits = 3) { if (!isFinite(x)) return "NaN"; if (Math.abs(x) >= 1e4 || Math.abs(x) < 1e-3) return x.toExponential(digits); return x.toFixed(digits); }
+
+    let lastResult = null;
+    let hasSolved = false;
+
+    const ropeSizeSelect = document.getElementById("ropeSize");
+    function applyRopePreset() {
+      const val = ropeSizeSelect.value;
+      if (val !== "custom" && ropeData[val]) {
+        const d = ropeData[val];
+        document.getElementById("A").value = d.A;
+        document.getElementById("wCable").value = d.w;
+        document.getElementById("breakStrength").value = d.R;
+      }
+    }
+    ropeSizeSelect.addEventListener("change", applyRopePreset);
+
+    const baseTypeSelect = document.getElementById("baseType");
+    const eiField = document.getElementById("eiField");
+    function syncBaseUI() { if (eiField) eiField.style.display = baseTypeSelect.value === "fixed" ? "block" : "none"; }
+    baseTypeSelect.addEventListener("change", () => {
+      syncBaseUI();
+      if (hasSolved) runSolve(true);
+    });
+    ropeSizeSelect.value = "1/2";
+    applyRopePreset();
+    syncBaseUI();
+
+    function validateInputs() {
+      const H = num("H"), y1 = num("y1"), x1 = num("x1"), q = num("q");
+      const A = num("A"), E = num("E"), EA = E * A; const EI_in2 = num("EI");
+      const y2 = num("y2");
+      const baseType = document.getElementById("baseType").value;
+      if (!(H > 0)) return "Provide a positive structure height H.";
+      if (!(y1 > 0)) return "Provide a positive guy connection height y1.";
+      if (y1 > H) return "Guy connection height y1 cannot exceed the structure height H.";
+      if (!(x1 > 0)) return "Provide a positive anchor offset x1.";
+      if (y2 > 0 && y2 > H) return "Guy connection height y2 cannot exceed the structure height H.";
+      if (!(EA > 0)) return "Cable EA is zero or invalid; check cable Area A and Modulus E inputs.";
+      if (baseType === "pinned" && !(q > 0)) return "Pinned base selected but q = 0. No wind load => no required guy force.";
+      if (baseType === "fixed" && !(EI_in2 > 0)) return "Fixed base selected but mast flexural stiffness EI <= 0. Provide a positive EI.";
+      return null;
+    }
+
+    function runSolve(clearReport = true) {
+      const validationError = validateInputs();
+      if (validationError) {
+        alert(validationError);
+        lastResult = null;
+        document.getElementById("btnReport").disabled = true;
+        document.getElementById("btnPrint").disabled = true;
+        renderResults(null);
+        drawDiagram(null);
+        if (clearReport) document.getElementById("reportArea").innerHTML = "";
+        hasSolved = false;
+        return;
+      }
+
+      const result = computeGuySystem();
+      if (!result) {
+        alert("Computation failed. Check inputs or view console for details.");
+        lastResult = null;
+        document.getElementById("btnReport").disabled = true;
+        document.getElementById("btnPrint").disabled = true;
+        renderResults(null);
+        drawDiagram(null);
+        if (clearReport) document.getElementById("reportArea").innerHTML = "";
+        hasSolved = false;
+        return;
+      }
+
+      lastResult = result;
+      document.getElementById("btnReport").disabled = !result;
+      document.getElementById("btnPrint").disabled = !result;
+      renderResults(result);
+      drawDiagram(result);
+      if (clearReport) document.getElementById("reportArea").innerHTML = "";
+      if (result) hasSolved = true;
+    }
+
+    document.getElementById("btnSolve").addEventListener("click", () => runSolve(true));
+    document.getElementById("btnReport").addEventListener("click", () => {
+      if (!lastResult) return;
+      document.getElementById("reportArea").innerHTML = generateReport(lastResult);
+    });
+    document.getElementById("btnPrint").addEventListener("click", () => {
+      if (!lastResult) return;
+      const ra = document.getElementById("reportArea");
+      if (!ra.innerHTML || ra.innerHTML.trim() === "") ra.innerHTML = generateReport(lastResult);
+      openPrintableReport();
+    });
+
+    function openPrintableReport() {
+      const reportHtml = document.getElementById("reportArea").innerHTML;
+      if (!reportHtml || reportHtml.trim() === "") return;
+
+      const printCss = `
+        @import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+        @page { size: letter; margin: 0.6in; }
+        body { margin: 0; font-family: "Sora", "Trebuchet MS", sans-serif; color: #111827; background: #fff; }
+        .calc-report { font-family: "Sora", "Trebuchet MS", sans-serif; font-size: 11pt; line-height: 1.25; }
+        .calc-report .page { border: 1px solid #1f2937; padding: 12px; margin: 0 0 12px 0; background: #fff; page-break-after: always; }
+        .calc-report .hdr { display: flex; justify-content: space-between; gap: 12px; font-size: 9pt; margin-bottom: 8px; }
+        .calc-report .hdr .right { text-align: right; }
+        .calc-report .title { font-size: 14pt; font-weight: 700; margin: 2px 0 8px; }
+        .calc-report .subtitle { font-size: 10pt; margin: 0 0 6px; }
+        .calc-report .box { border: 1px solid #1f2937; padding: 10px; margin: 10px 0; }
+        .calc-report .box h3 { margin: 0 0 6px; font-size: 11pt; }
+        .calc-report .muted { color: #4b5563; }
+        .calc-report .mono { font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 9.5pt; white-space: pre-wrap; }
+        .calc-report table.kv { width: 100%; border-collapse: collapse; font-size: 10pt; }
+        .calc-report table.kv td { padding: 3px 6px; vertical-align: top; }
+        .calc-report table.kv td.k { width: 50%; font-weight: 600; }
+        .calc-report table.kv tr + tr td { border-top: 1px solid #e5e7eb; }
+        .calc-report .hl { background: #fff2b2; padding: 1px 3px; }
+        .calc-report .small { font-size: 9pt; }
+      `;
+
+      const w = window.open("", "_blank");
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Calculation Report</title><style>${printCss}</style></head><body>${reportHtml}</body></html>`);
+      w.document.close();
+      w.focus();
+      w.print();
+    }
+
+    function computeGuySystem() {
+      const baseType = document.getElementById("baseType").value;
+      const H = num("H"), y1 = num("y1"), q = num("q"), x1 = num("x1");
+      const y2 = num("y2"), x2 = num("x2");
+      const A = num("A"), E = num("E"), w_lbft = num("wCable");
+      const T0 = num("T0"), T0_2_raw = num("T0_2");
+      const EI_in2 = num("EI"), R_break = num("breakStrength");
+      const EI_ft2 = isFinite(EI_in2) ? EI_in2 / 144.0 : 0;
+      const EA = E * A;
+      if (H <= 0 || y1 <= 0 || x1 <= 0 || EA <= 0) return null;
+      const w_kipft = isFinite(w_lbft) ? w_lbft / 1000.0 : 0;
+
+      // Build guy levels (up to two)
+      const levels = [];
+      const pushLevel = (label, y, x, Tpret) => {
+        if (y > 0 && x > 0) {
+          levels.push({ label, y, x, Tpret, L0: Math.hypot(x, y) });
+        }
+      };
+      pushLevel("Level 1", y1, x1, T0);
+      pushLevel("Level 2", y2, x2, T0_2_raw > 0 ? T0_2_raw : T0);
+      if (levels.length === 0) return null;
+      levels.sort((a, b) => a.y - b.y);
+
+      let baseResult = baseType === "pinned"
+        ? solvePinnedBaseMulti({ H, q, EA, levels })
+        : solveFixedBaseMulti({ H, q, EA, EI: EI_ft2, levels });
+      if (!baseResult) return null;
+
+      // Pretension catenary (no wind load, no mast deflection)
+      let catPretension = null;
+      let pretensionSag_in = 0;
+      let pretension_x0 = null;
+      let pretension_L_stretched = null;
+      const L0 = Math.hypot(x1, y1);
+      if (w_kipft > 0 && T0 > 0 && x1 > 0 && y1 > 0) {
+        const H0 = T0 * (x1 / L0);
+        catPretension = computeCatenary({ xAnchor: -x1, yAnchor: 0, xTop: 0, yTop: y1, H_horizontal: H0, wCable: w_kipft });
+        pretensionSag_in = (catPretension ? catPretension.maxSag : 0) * 12.0;
+        pretension_x0 = catPretension ? catPretension.x0Local : null;
+        if (catPretension && catPretension.arcLength) {
+          pretension_L_stretched = catPretension.arcLength * (1 + (EA > 0 ? T0 / EA : 0));
+        }
+      }
+      if (!pretension_L_stretched) {
+        const L_stretched = L0 * (1 + (EA > 0 ? T0 / EA : 0));
+        pretension_L_stretched = L_stretched;
+      }
+
+      const catWindLevels = [];
+      const catLeewLevels = [];
+      if (w_kipft > 0 && baseResult.windLevels) {
+        baseResult.windLevels.forEach(wlvl => {
+          if (wlvl && wlvl.H_horizontal > 0) catWindLevels.push(computeCatenary({ xAnchor: wlvl.xAnchor, yAnchor: wlvl.yAnchor, xTop: wlvl.xTop, yTop: wlvl.yTop, H_horizontal: wlvl.H_horizontal, wCable: w_kipft }));
+          else catWindLevels.push(null);
+        });
+      }
+      if (w_kipft > 0 && baseResult.leewLevels) {
+        baseResult.leewLevels.forEach(llvl => {
+          if (llvl && llvl.H_horizontal > 0) catLeewLevels.push(computeCatenary({ xAnchor: llvl.xAnchor, yAnchor: llvl.yAnchor, xTop: llvl.xTop, yTop: llvl.yTop, H_horizontal: llvl.H_horizontal, wCable: w_kipft }));
+          else catLeewLevels.push(null);
+        });
+      }
+      while (catWindLevels.length < levels.length) catWindLevels.push(null);
+      while (catLeewLevels.length < levels.length) catLeewLevels.push(null);
+
+      const sagWind_in = levels.map((_, i) => (catWindLevels[i] ? catWindLevels[i].maxSag * 12.0 : 0));
+      const sagLeew_in = levels.map((_, i) => (catLeewLevels[i] ? catLeewLevels[i].maxSag * 12.0 : 0));
+      const defGuy_in = levels.map((_, i) => (baseResult.def_levels && baseResult.def_levels[i] ? baseResult.def_levels[i].ux * 12.0 : 0));
+      const defTop_in = baseResult.def_top * 12.0;
+      const maxTensionWind = Math.max(...catWindLevels.map(c => c ? c.T_max : 0), 0);
+      const maxTensionLeew = Math.max(...catLeewLevels.map(c => c ? c.T_max : 0), 0);
+      const fosWind = (R_break > 0 && maxTensionWind > 0) ? (R_break / maxTensionWind) : null;
+
+      return {
+        baseType,
+        input: { H, y1, x1, q, A, E, EA, w_lbft, w_kipft, T0, EI_in2, EI_ft2, R_break },
+        levelsMeta: levels.map(l => ({ label: l.label, y: l.y, x: l.x, Tpret: l.Tpret })),
+        base: baseResult,
+        catenaryPretension: catPretension,
+        pretensionSag_in,
+        pretension_x0,
+        pretension_L_stretched,
+        catenaryWindLevels: catWindLevels,
+        catenaryLeewLevels: catLeewLevels,
+        sagWind_in,
+        sagLeew_in,
+        defGuy_in,
+        defTop_in,
+        maxTensionWind,
+        maxTensionLeew,
+        fosWind,
+        fosLevels: levels.map((_, idx) => {
+          const cW = catWindLevels[idx];
+          const Tmax = cW ? cW.T_max : 0;
+          return (R_break > 0 && Tmax > 0) ? (R_break / Tmax) : null;
+        })
+      };
+    }
+
+    function solvePinnedBaseMulti({ H, q, EA, levels }) {
+      if (q <= 0) { alert("Pinned base selected but q = 0. No wind load => no required guy force."); return null; }
+      const H_req = q * H * H / 2;
+      function zeroStressLength(level) {
+        return level.Tpret > 0 ? level.L0 / (1 + level.Tpret / EA) : level.L0;
+      }
+      function levelState(theta, level, anchorX) {
+        const xTop = level.y * Math.sin(theta);
+        const yTop = level.y * Math.cos(theta);
+        const dx = xTop - anchorX;
+        const dy = yTop;
+        const L = Math.hypot(dx, dy);
+        const Lz = zeroStressLength(level);
+        const T = Math.max(0, EA * (L - Lz) / Lz);
+        const ux = dx / L, uy = dy / L;
+        return {
+          xAnchor: anchorX,
+          yAnchor: 0,
+          xTop,
+          yTop,
+          L_chord: L,
+          T_chord: T,
+          H_horizontal: Math.abs(T * ux),
+          FxTop_chord: -T * ux,
+          FyTop_chord: -T * uy,
+          FxAnchor_chord: T * ux,
+          FyAnchor_chord: T * uy
+        };
+      }
+      function F(theta) {
+        let m = 0;
+        for (const lvl of levels) {
+          const wind = levelState(theta, lvl, -lvl.x);
+          m += wind.H_horizontal * lvl.y;
+        }
+        return m - H_req;
+      }
+      let thetaLo = 0, thetaHi = 0.01, FLo = F(thetaLo), FHi = F(thetaHi), iter = 0;
+      while (FLo * FHi > 0 && thetaHi < 1.5 && iter < 60) { thetaHi *= 2; FHi = F(thetaHi); iter++; }
+      if (FLo * FHi > 0) {
+        // No rotation satisfying equilibrium found. Return a non-fatal result with an error flag
+        // so the report can still be generated for single-level or degenerate cases.
+        const windLevels = levels.map(() => null);
+        const leewLevels = levels.map(() => null);
+        return {
+          case: "pinned",
+          error: "Pinned base: no rotation satisfying equilibrium. Adjust inputs.",
+          theta: 0,
+          def_levels: levels.map(l => ({ y: l.y, ux: 0 })),
+          def_top: 0,
+          xTopStruct: 0,
+          yTopStruct: H,
+          windLevels,
+          leewLevels
+        };
+      }
+      for (let i = 0; i < 80; i++) {
+        const mid = 0.5 * (thetaLo + thetaHi);
+        const Fm = F(mid);
+        if (Fm > 0) { thetaHi = mid; FHi = Fm; } else { thetaLo = mid; FLo = Fm; }
+      }
+      const theta = 0.5 * (thetaLo + thetaHi);
+      const windLevels = [], leewLevels = [];
+      for (const lvl of levels) {
+        windLevels.push(levelState(theta, lvl, -lvl.x));
+        leewLevels.push(levelState(theta, lvl, lvl.x));
+      }
+      return {
+        case: "pinned",
+        theta,
+        def_levels: levels.map(l => ({ y: l.y, ux: l.y * Math.sin(theta) })),
+        def_top: H * Math.sin(theta),
+        xTopStruct: H * Math.sin(theta),
+        yTopStruct: H * Math.cos(theta),
+        windLevels,
+        leewLevels
+      };
+    }
+
+    function solveFixedBaseMulti({ H, q, EA, EI, levels }) {
+      if (EI <= 0) { alert("Fixed base selected but mast flexural stiffness EI <= 0. Provide a positive EI."); return null; }
+      const yAnchor = 0;
+      const LzArr = levels.map(l => (l.Tpret > 0 ? l.L0 / (1 + l.Tpret / EA) : l.L0));
+      function deltaUniform(x) {
+        return q * x * x / (24 * EI) * (6 * H * H - 4 * H * x + x * x);
+      }
+      function deltaPoint(x, a, P) {
+        if (x <= a) return P * x * x * (3 * a - x) / (6 * EI);
+        return P * a * a * (3 * x - a) / (6 * EI);
+      }
+      function cableState(u, level, Lz, anchorX) {
+        const dx = u - anchorX, dy = level.y - yAnchor, L = Math.hypot(dx, dy);
+        const T = Math.max(0, EA * (L - Lz) / Lz);
+        const ux = dx / L, uy = dy / L;
+        const FxTop = -T * ux, FyTop = -T * uy;
+        return { xAnchor: anchorX, yAnchor, anchorX, anchorY: yAnchor, dx, dy, L, T_chord: T, ux, uy, FxTop_chord: FxTop, FyTop_chord: FyTop, FxAnchor_chord: -FxTop, FyAnchor_chord: -FyTop, H_horizontal: Math.abs(T * ux), xTop: u, yTop: level.y };
+      }
+      function evalAt(uVec) {
+        const windLevels = [], leewLevels = [];
+        const P = [];
+        for (let i = 0; i < levels.length; i++) {
+          const lvl = levels[i];
+          const Lz = LzArr[i];
+          const wstate = cableState(uVec[i], lvl, Lz, -lvl.x);
+          const lstate = cableState(uVec[i], lvl, Lz, lvl.x);
+          windLevels.push(wstate); leewLevels.push(lstate);
+          P.push(wstate.FxTop_chord + lstate.FxTop_chord);
+        }
+        const uNext = [];
+        for (let i = 0; i < levels.length; i++) {
+          const x = levels[i].y;
+          let val = deltaUniform(x);
+          for (let j = 0; j < levels.length; j++) {
+            val += deltaPoint(x, levels[j].y, P[j]);
+          }
+          uNext.push(val);
+        }
+        let defTop = deltaUniform(H);
+        for (let j = 0; j < levels.length; j++) defTop += deltaPoint(H, levels[j].y, P[j]);
+        return { windLevels, leewLevels, P, uNext, defTop };
+      }
+      function solveLinearSystem(J, b) {
+        const n = J.length;
+        const A = J.map(row => row.slice());
+        const x = b.slice();
+        for (let i = 0; i < n; i++) {
+          let pivotRow = i;
+          let pivotVal = Math.abs(A[i][i]);
+          for (let r = i + 1; r < n; r++) {
+            const v = Math.abs(A[r][i]);
+            if (v > pivotVal) { pivotVal = v; pivotRow = r; }
+          }
+          if (!isFinite(pivotVal) || pivotVal < 1e-12) return null;
+          if (pivotRow !== i) {
+            [A[i], A[pivotRow]] = [A[pivotRow], A[i]];
+            [x[i], x[pivotRow]] = [x[pivotRow], x[i]];
+          }
+          for (let r = i + 1; r < n; r++) {
+            const f = A[r][i] / A[i][i];
+            for (let c = i; c < n; c++) A[r][c] -= f * A[i][c];
+            x[r] -= f * x[i];
+          }
+        }
+        const sol = new Array(n).fill(0);
+        for (let i = n - 1; i >= 0; i--) {
+          let sum = x[i];
+          for (let c = i + 1; c < n; c++) sum -= A[i][c] * sol[c];
+          sol[i] = sum / A[i][i];
+        }
+        return sol;
+      }
+
+      // Newton solve for u - uNext(u) = 0 to avoid divergence with stiff cables.
+      let uVec = levels.map(l => deltaUniform(l.y));
+      let state = evalAt(uVec);
+      for (let iter = 0; iter < 40; iter++) {
+        const F = uVec.map((u, i) => u - state.uNext[i]);
+        const norm = Math.max(...F.map(v => Math.abs(v)));
+        if (!isFinite(norm)) break;
+        if (norm < 1e-7) break;
+        const n = uVec.length;
+        const J = Array.from({ length: n }, () => new Array(n).fill(0));
+        for (let j = 0; j < n; j++) {
+          const du = 1e-4 * (1 + Math.abs(uVec[j]));
+          const uPert = uVec.slice();
+          uPert[j] += du;
+          const stPert = evalAt(uPert);
+          const Fpert = uPert.map((u, i) => u - stPert.uNext[i]);
+          for (let i = 0; i < n; i++) J[i][j] = (Fpert[i] - F[i]) / du;
+        }
+        const delta = solveLinearSystem(J, F);
+        if (!delta) {
+          uVec = uVec.map((u, i) => 0.2 * state.uNext[i] + 0.8 * u);
+          state = evalAt(uVec);
+          continue;
+        }
+        let step = 1;
+        let accepted = false;
+        for (let ls = 0; ls < 8; ls++) {
+          const trial = uVec.map((u, i) => u - step * delta[i]);
+          const stTrial = evalAt(trial);
+          const Ftrial = trial.map((u, i) => u - stTrial.uNext[i]);
+          const normTrial = Math.max(...Ftrial.map(v => Math.abs(v)));
+          if (isFinite(normTrial) && normTrial < norm) {
+            uVec = trial;
+            state = stTrial;
+            accepted = true;
+            break;
+          }
+          step *= 0.5;
+        }
+        if (!accepted) {
+          uVec = uVec.map((u, i) => u - 0.2 * delta[i]);
+          state = evalAt(uVec);
+        }
+      }
+      return {
+        case: "fixed",
+        def_levels: levels.map((l, i) => ({ y: l.y, ux: uVec[i], P: state.P[i] })),
+        def_top: state.defTop,
+        xTopStruct: state.defTop,
+        yTopStruct: H,
+        windLevels: state.windLevels,
+        leewLevels: state.leewLevels,
+        def_q_levels: levels.map(l => ({ y: l.y, ux: deltaUniform(l.y) })),
+        def_q_top: deltaUniform(H)
+      };
+    }
+
+    function computeCatenary({ xAnchor, yAnchor, xTop, yTop, H_horizontal, wCable }) {
+      const dir = xTop >= xAnchor ? 1 : -1;
+      const Lh = Math.abs(xTop - xAnchor);
+      if (Lh <= 0) return null;
+      const dy = yTop - yAnchor;
+      const Hh = Math.abs(H_horizontal);
+      const w = wCable;
+      if (!isFinite(Hh) || !isFinite(w) || Hh <= 0 || w <= 0) return null;
+      const a = Hh / w;
+      const half = Lh / (2 * a);
+      const denom = 2 * a * Math.sinh(half);
+      if (!isFinite(denom) || Math.abs(denom) < 1e-12) return null;
+      const term = dy / denom;
+      const x0 = Lh / 2 - a * Math.asinh(term);
+      const delta = -a * Math.cosh(x0 / a);
+      if (!isFinite(x0) || !isFinite(delta)) return null;
+      function yCatLocal(x) { return a * Math.cosh((x - x0) / a) + delta; }
+      function yChordLocal(x) { return (dy / Lh) * x; }
+      const n = 200;
+      let maxSag = 0, xSagLocal = 0;
+      const points = [];
+      for (let i = 0; i <= n; i++) {
+        const xLocal = (Lh * i) / n;
+        const yLocal = yCatLocal(xLocal);
+        const yLine = yChordLocal(xLocal);
+        const sag = yLine - yLocal;
+        if (sag > maxSag) { maxSag = sag; xSagLocal = xLocal; }
+        points.push({ x: xAnchor + dir * xLocal, y: yAnchor + yLocal });
+      }
+      const T_anchor = Hh * Math.cosh(x0 / a);
+      const T_top = Hh * Math.cosh((Lh - x0) / a);
+      const T_max = Math.max(T_anchor, T_top);
+      const x_anchor_v = -x0, x_top_v = Lh - x0;
+      const R_anchor_y = w * a * Math.sinh(Math.abs(x_anchor_v) / a);
+      const R_top_y = w * a * Math.sinh(Math.abs(x_top_v) / a);
+      const FxAnchor = dir * Hh, FyAnchor = -R_anchor_y;
+      const FxTop = -dir * Hh, FyTop = -R_top_y;
+      if (![T_anchor, T_top, T_max, R_anchor_y, R_top_y, FxAnchor, FyAnchor, FxTop, FyTop].every(Number.isFinite)) return null;
+      const arcLength = a * (Math.sinh((Lh - x0) / a) - Math.sinh(-x0 / a));
+      if (!isFinite(arcLength) || arcLength <= 0) return null;
+      return { a, x0Local: x0, deltaLocal: delta, maxSag, xSag: xAnchor + dir * xSagLocal, T_anchor, T_top, T_max, FxAnchor, FyAnchor, FxTop, FyTop, arcLength, points };
+    }
+    function renderResults(result) {
+      const resDiv = document.getElementById("results");
+      if (!result) { resDiv.innerHTML = "<span class='note'>No valid solution. Check inputs.</span>"; return; }
+      const { baseType, input, levelsMeta, base, catenaryWindLevels, catenaryLeewLevels, sagWind_in, sagLeew_in, defGuy_in, defTop_in, maxTensionWind, maxTensionLeew, fosWind } = result;
+      const windLevels = (base && base.windLevels) ? base.windLevels : [];
+      const leewLevels = (base && base.leewLevels) ? base.leewLevels : [];
+      const bt = baseType === "pinned" ? "Pinned base (no base moment; wind resisted by tension-side guy)" : "Fixed base (cantilever with EI; symmetric windward/leeward guys)";
+      let html = "";
+      html += `<p><strong>Base condition:</strong> ${bt}${base && base.error ? ` <span style="color:#b45309; font-weight:600;">(Warning: ${escapeHtml(base.error)})</span>` : ""}</p>`;
+      html += `<ul>`;
+      html += `<li>Structure height H = ${fmt(input.H)} ft</li>`;
+      html += `<li>Guy connection height y1 = ${fmt(input.y1)} ft</li>`;
+      html += `<li>Anchor offset x1 = ${fmt(input.x1)} ft</li>`;
+      html += `<li>Uniform line load q = ${fmt(input.q)} kips/ft</li>`;
+      if (baseType === "fixed") html += `<li>Mast flexural stiffness EI = ${fmt(input.EI_in2)} kip-in^2</li>`;
+      html += `<li>Pretension T0 = ${fmt(input.T0)} kips</li>`;
+      html += `<li>Breaking strength (windward) = ${fmt(input.R_break)} kips</li>`;
+      html += `<li>Cable weight = ${fmt(input.w_lbft)} lb/ft = ${fmt(input.w_kipft)} kips/ft</li>`;
+      html += `</ul>`;
+      html += `<h3>Catenary forces (includes self-weight)</h3><ul>`;
+      levelsMeta.forEach((lvl, idx) => {
+        const cW = catenaryWindLevels[idx];
+        const cL = catenaryLeewLevels[idx];
+        html += `<li><strong>${lvl.label} @ y=${fmt(lvl.y)} ft, x=${fmt(lvl.x)} ft:</strong><ul>`;
+        if (cW) {
+          html += `<li>Windward: T_max = ${fmt(cW.T_max)} kips; sag = ${fmt(sagWind_in[idx])} in; x0 = ${fmt(cW.x0Local)} ft; Anchor: H=${fmt(cW.FxAnchor)} kips, V=${fmt(cW.FyAnchor)} kips; Top: H=${fmt(cW.FxTop)} kips, V=${fmt(cW.FyTop)} kips</li>`;
+        } else {
+          html += `<li>Windward: catenary not evaluated (weight/tension may be zero).</li>`;
+        }
+        if (cL) {
+          html += `<li>Leeward: T_max = ${fmt(cL.T_max)} kips; sag = ${fmt(sagLeew_in[idx])} in; x0 = ${fmt(cL.x0Local)} ft</li>`;
+        } else if (leewLevels[idx]) {
+          html += `<li>Leeward: slack or not evaluated.</li>`;
+        } else {
+          html += `<li>Leeward: not present (pinned case).</li>`;
+        }
+        html += `</ul></li>`;
+      });
+      html += `</ul>`;
+      html += `<h3>Deflection</h3><ul>`;
+      levelsMeta.forEach((lvl, idx) => {
+        const defVal = defGuy_in[idx] || 0;
+        html += `<li>u_x(${lvl.label}) = ${fmt(defVal)} in</li>`;
+      });
+      html += `<li>At top of structure: u_x(H) = ${fmt(defTop_in)} in</li>`;
+      html += `</ul>`;
+      html += `<h3>Checks</h3><ul>`;
+      if (fosWind) {
+        html += `<li>Factor of safety (overall windward) = ${fmt(fosWind, 2)} (R_break / T_max,w)</li>`;
+      } else if (input.R_break > 0) {
+        html += `<li>Breaking strength provided (${fmt(input.R_break)} kips) but computed maximum wind tension is zero; Factor of safety cannot be computed.</li>`;
+      } else {
+        html += `<li>Factor of safety (windward): set breaking strength to compute.</li>`;
+      };
+
+      // Per-level FOS (windward)
+      if (result.fosLevels && Array.isArray(result.fosLevels) && result.fosLevels.length > 0) {
+        result.fosLevels.forEach((f, idx) => {
+          const lbl = levelsMeta[idx] ? levelsMeta[idx].label : `Level ${idx+1}`;
+          if (isFinite(f) && f > 0) {
+            html += `<li>${lbl} FOS (windward) = ${fmt(f, 2)} (R_break / T_max)</li>`;
+          } else if (input.R_break > 0) {
+            html += `<li>${lbl} FOS (windward): Breaking strength provided (${fmt(input.R_break)} kips) but computed T_max is zero; FOS not available.</li>`;
+          } else {
+            html += `<li>${lbl} FOS (windward): provide breaking strength to evaluate.</li>`;
+          }
+        });
+      }
+
+      if (leewLevels && leewLevels.length > 0) {
+        levelsMeta.forEach((lvl, idx) => {
+          const cL = catenaryLeewLevels[idx];
+          if (input.R_break > 0) {
+            const tLeew = (cL && isFinite(cL.T_max)) ? cL.T_max : 0;
+            const pct = tLeew > 0 ? (100 * tLeew / input.R_break) : 0;
+            html += `<li>Leeward ${lvl.label} Guying: ${fmt(pct, 1)}% of Breaking Strength${pct === 0 ? " (slack)" : ""}</li>`;
+          } else {
+            html += `<li>Leeward ${lvl.label} Guying: provide breaking strength to evaluate.</li>`;
+          }
+        });
+      }
+      html += `</ul>`;
+      html += `<p class="note">
+        Pretension T0 is assumed symmetric in plan (equal guys). Fixed-base mode solves cantilever compatibility with EI, uniform load q, and both guys modeled as axial springs. Catenary results show the
+        different vertical components and total tensions at the top and anchor; horizontal components
+        remain equal in magnitude on each cable by equilibrium.
+      </p>`;
+      resDiv.innerHTML = html;
+    }
+    function resizeCanvasToDisplaySize(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const w = Math.max(300, Math.floor(rect.width * ratio));
+      const h = Math.max(220, Math.floor(rect.height * ratio));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      return { w, h };
+    }
+
+    function buildDeflectedProfile(result) {
+      if (!result || result.baseType !== "fixed") return null;
+      const { input, base } = result;
+      if (!isFinite(input.EI_ft2) || input.EI_ft2 <= 0) return null;
+      const H = input.H;
+      const q = input.q;
+      const EI = input.EI_ft2;
+      const levels = base.def_levels || [];
+      const deltaUniform = (x) => q * x * x / (24 * EI) * (6 * H * H - 4 * H * x + x * x);
+      const deltaPoint = (x, a, P) => {
+        if (x <= a) return P * x * x * (3 * a - x) / (6 * EI);
+        return P * a * a * (3 * x - a) / (6 * EI);
+      };
+      const points = [];
+      const n = 90;
+      for (let i = 0; i <= n; i++) {
+        const y = (H * i) / n;
+        let u = deltaUniform(y);
+        for (const lvl of levels) {
+          u += deltaPoint(y, lvl.y, lvl.P || 0);
+        }
+        points.push({ x: u, y });
+      }
+      return points;
+    }
+
+    function drawDiagram(result) {
+      const canvas = document.getElementById("diagram");
+      const ctx = canvas.getContext("2d");
+      const { w, h } = resizeCanvasToDisplaySize(canvas);
+      ctx.clearRect(0, 0, w, h);
+      if (!result) { ctx.fillStyle = "#9ca3af"; ctx.font = "12px system-ui"; ctx.fillText("No solution to plot.", 10, 20); return; }
+      const { base, catenaryWindLevels, catenaryLeewLevels, input, levelsMeta } = result;
+      const windLevels = base.windLevels || [];
+      const leewLevels = base.leewLevels || [];
+      const defProfile = buildDeflectedProfile(result);
+      const pts = [{ x: 0, y: 0 }, { x: 0, y: input.H }];
+      if (defProfile && defProfile.length) pts.push(...defProfile);
+      else pts.push({ x: base.xTopStruct, y: base.yTopStruct });
+      const catWindPtsAll = [];
+      const catLeewPtsAll = [];
+      windLevels.forEach((wL, idx) => {
+        if (!wL) return;
+        pts.push({ x: wL.xTop, y: wL.yTop }, { x: wL.xAnchor, y: wL.yAnchor });
+        const cat = catenaryWindLevels[idx];
+        if (cat && cat.points) { catWindPtsAll.push(cat.points); pts.push(...cat.points); }
+      });
+      leewLevels.forEach((lL, idx) => {
+        if (!lL) return;
+        pts.push({ x: lL.xTop, y: lL.yTop }, { x: lL.xAnchor, y: lL.yAnchor });
+        const cat = catenaryLeewLevels[idx];
+        if (cat && cat.points) { catLeewPtsAll.push(cat.points); pts.push(...cat.points); }
+      });
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      pts.forEach(p => { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; });
+      if (!isFinite(minX)) return;
+      const pad = 30, width = w - 2 * pad, height = h - 2 * pad;
+      const dx = maxX - minX || 1, dy = maxY - minY || 1;
+      const scale = 0.85 * Math.min(width / dx, height / dy);
+      const tx = x => pad + (x - minX) * scale;
+      const ty = y => pad + (maxY - y) * scale;
+      ctx.strokeStyle = "#d4d4d8"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(tx(minX - 0.2 * dx), ty(0)); ctx.lineTo(tx(maxX + 0.2 * dx), ty(0)); ctx.stroke();
+      ctx.strokeStyle = "#cbd5e1"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(tx(0), ty(0)); ctx.lineTo(tx(0), ty(input.H)); ctx.stroke();
+      ctx.strokeStyle = "#1d4ed8"; ctx.lineWidth = 2; ctx.beginPath();
+      if (defProfile && defProfile.length) {
+        defProfile.forEach((p, i) => {
+          const X = tx(p.x), Y = ty(p.y);
+          if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+        });
+      } else {
+        ctx.moveTo(tx(0), ty(0)); ctx.lineTo(tx(base.xTopStruct), ty(base.yTopStruct));
+      }
+      ctx.stroke();
+      const drawCatenary = (ptsArr, color) => {
+        if (!ptsArr || ptsArr.length === 0) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ptsArr.forEach((p, i) => {
+          const X = tx(p.x), Y = ty(p.y);
+          if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+        });
+        ctx.stroke();
+      };
+      // Plot catenaries or fallback chords for each level
+      windLevels.forEach((wL, idx) => {
+        const cat = catenaryWindLevels[idx];
+        if (cat && cat.points) drawCatenary(cat.points, "#10b981");
+        else if (wL) drawCatenary([{ x: wL.xAnchor, y: wL.yAnchor }, { x: wL.xTop, y: wL.yTop }], "#10b981");
+      });
+      leewLevels.forEach((lL, idx) => {
+        const cat = catenaryLeewLevels[idx];
+        if (cat && cat.points) drawCatenary(cat.points, "#f59e0b");
+        else if (lL) drawCatenary([{ x: lL.xAnchor, y: lL.yAnchor }, { x: lL.xTop, y: lL.yTop }], "#f59e0b");
+      });
+      const drawDot = (x, y, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(tx(x), ty(y), 3, 0, 2 * Math.PI); ctx.fill(); };
+      drawDot(0, 0, "#1d4ed8"); drawDot(0, input.H, "#9ca3af"); drawDot(base.xTopStruct, base.yTopStruct, "#1d4ed8");
+      windLevels.forEach(wL => { if (wL) { drawDot(wL.xAnchor, wL.yAnchor, "#ef4444"); drawDot(wL.xTop, wL.yTop, "#7c3aed"); } });
+      leewLevels.forEach(lL => { if (lL) { drawDot(lL.xAnchor, lL.yAnchor, "#f97316"); } });
+      ctx.fillStyle = "#111827"; ctx.font = "11px system-ui";
+      ctx.fillText("Base", tx(0) + 4, ty(0) - 4);
+      ctx.fillText("Top (undeformed)", tx(0) + 4, ty(input.H) - 4);
+      ctx.fillText("Top (def.)", tx(base.xTopStruct) + 4, ty(base.yTopStruct) - 4);
+      levelsMeta.forEach((lvl, idx) => {
+        const wL = windLevels[idx];
+        if (wL) ctx.fillText(`${lvl.label}`, tx(wL.xTop) + 4, ty(wL.yTop) - 4);
+      });
+      ctx.strokeStyle = "#9ca3af"; ctx.lineWidth = 1;
+      const dimX = minX + 0.85 * (maxX - minX);
+      ctx.beginPath(); ctx.moveTo(tx(dimX), ty(0)); ctx.lineTo(tx(dimX), ty(input.H)); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tx(dimX) - 4, ty(0)); ctx.lineTo(tx(dimX) + 4, ty(0)); ctx.moveTo(tx(dimX) - 4, ty(input.H)); ctx.lineTo(tx(dimX) + 4, ty(input.H)); ctx.stroke();
+      ctx.fillStyle = "#4b5563"; ctx.fillText(`H = ${fmt(input.H)} ft`, tx(dimX) + 6, (ty(0) + ty(input.H)) / 2);
+      if (levelsMeta && levelsMeta.length > 0) {
+        let dimShift = 0.06 * (maxX - minX);
+        levelsMeta.forEach((lvl, idx) => {
+          const dimX2 = dimX + dimShift;
+          ctx.strokeStyle = "#9ca3af"; ctx.beginPath(); ctx.moveTo(tx(dimX2), ty(0)); ctx.lineTo(tx(dimX2), ty(lvl.y)); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(tx(dimX2) - 4, ty(0)); ctx.lineTo(tx(dimX2) + 4, ty(0)); ctx.moveTo(tx(dimX2) - 4, ty(lvl.y)); ctx.lineTo(tx(dimX2) + 4, ty(lvl.y)); ctx.stroke();
+          ctx.fillStyle = "#4b5563"; ctx.fillText(`${lvl.label} y = ${fmt(lvl.y)} ft`, tx(dimX2) + 6, (ty(0) + ty(lvl.y)) / 2);
+          dimShift += 0.05 * (maxX - minX);
+        });
+      }
+      const yDim = minY + 0.1 * (maxY - minY);
+      const firstAnchor = windLevels[0] || leewLevels[0] || null;
+      if (firstAnchor || (levelsMeta && levelsMeta.length > 0)) {
+        const xAnchorForDim = firstAnchor ? firstAnchor.xAnchor : -levelsMeta[0].x;
+        ctx.strokeStyle = "#9ca3af"; ctx.beginPath(); ctx.moveTo(tx(xAnchorForDim), ty(yDim)); ctx.lineTo(tx(0), ty(yDim)); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(tx(xAnchorForDim), ty(yDim) - 4); ctx.lineTo(tx(xAnchorForDim), ty(yDim) + 4); ctx.moveTo(tx(0), ty(yDim) - 4); ctx.lineTo(tx(0), ty(yDim) + 4); ctx.stroke();
+        ctx.fillStyle = "#4b5563"; const midX = 0.5 * (tx(xAnchorForDim) + tx(0)); ctx.fillText(`x = ${fmt(Math.abs(xAnchorForDim))} ft`, midX - 24, ty(yDim) - 6);
+
+        // Level 2 x-dimension (if present)
+        if ((windLevels[1] || leewLevels[1] || (levelsMeta && levelsMeta.length > 1))) {
+          const secondAnchor = windLevels[1] || leewLevels[1] || null;
+          const xAnchorForDim2 = secondAnchor ? secondAnchor.xAnchor : -levelsMeta[1].x;
+          const yDim2 = yDim + 0.035 * (maxY - minY);
+          ctx.strokeStyle = "#9ca3af"; ctx.beginPath(); ctx.moveTo(tx(xAnchorForDim2), ty(yDim2)); ctx.lineTo(tx(0), ty(yDim2)); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(tx(xAnchorForDim2), ty(yDim2) - 4); ctx.lineTo(tx(xAnchorForDim2), ty(yDim2) + 4); ctx.moveTo(tx(0), ty(yDim2) - 4); ctx.lineTo(tx(0), ty(yDim2) + 4); ctx.stroke();
+          ctx.fillStyle = "#4b5563"; const midX2 = 0.5 * (tx(xAnchorForDim2) + tx(0)); ctx.fillText(`x2 = ${fmt(Math.abs(xAnchorForDim2))} ft`, midX2 - 24, ty(yDim2) - 6);
+        }
+      }
+    }
+
+    
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function splitReportSections(lines) {
+      const sections = [];
+      let cur = { title: "", body: [] };
+      const pushCur = () => {
+        if (cur.title || cur.body.length) sections.push(cur);
+        cur = { title: "", body: [] };
+      };
+
+      for (let i = 0; i < lines.length; i++) {
+        const ln = lines[i];
+        if (/^\d+\.\s/.test(ln)) {
+          pushCur();
+          cur.title = ln;
+          // include underline line if present
+          if (i + 1 < lines.length && /^-+$/.test(lines[i + 1])) {
+            cur.body.push(lines[i + 1]);
+            i += 1;
+          }
+          continue;
+        }
+        cur.body.push(ln);
+      }
+      pushCur();
+      return sections;
+    }
+
+    function buildReportHtml(result, lines) {
+      const d = new Date();
+      const dateStr = d.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
+
+      const baseTypeLabel = result.baseType === "pinned" ? "Pinned (no base moment)" : "Fixed (cantilever)";
+      const inpt = result.input || {};
+      const levels = result.levelsMeta || [];
+
+      const kv = (rows) => {
+        const trs = rows.map(([k, v]) => `<tr><td class="k">${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`).join("");
+        return `<table class="kv">${trs}</table>`;
+      };
+
+      const defGuyStr = Array.isArray(result.defGuy_in) ? result.defGuy_in.map(v => fmt(v)).join(", ") : fmt(result.defGuy_in);
+      const sagWindStr = Array.isArray(result.sagWind_in) ? result.sagWind_in.map(v => fmt(v)).join(", ") : fmt(result.sagWind_in);
+      const sagLeewStr = Array.isArray(result.sagLeew_in) ? result.sagLeew_in.map(v => fmt(v)).join(", ") : fmt(result.sagLeew_in);
+      const summaryRows = [
+        ["Model / units", "US customary (ft, in, kips)"],
+        ["Base condition", baseTypeLabel],
+        ["Mast height, H", `${fmt(inpt.H)} ft`],
+        ["Uniform lateral load, q", `${fmt(inpt.q)} kips/ft`],
+        ["Cable EA", `${fmt(inpt.EA)} kips`],
+        ["Cable weight", `${fmt(inpt.w_lbft)} lb/ft`],
+        ["Pretension, Level 1", `${fmt(inpt.T0)} kips`],
+        ["Max tension (windward)", `${fmt(result.maxTensionWind)} kips`],
+        ["Max tension (leeward)", `${fmt(result.maxTensionLeew)} kips`],
+        ["Top deflection", `${fmt(result.defTop_in)} in`],
+        ["Guy deflection (tension-side anchor)", `${defGuyStr} in`],
+        ["Sag (windward)", `${sagWindStr} in`],
+        ["Sag (leeward)", `${sagLeewStr} in`],
+      ];
+
+      const fos = (result.fosLevels || []).filter(v => isFinite(v));
+      if (fos.length) summaryRows.push(["Factor of safety (windward)", fos.map(v => fmt(v, 2)).join(", ")]);
+      else summaryRows.push(["Factor of safety (windward)", inpt.R_break > 0 ? "Not available" : "Provide breaking strength to evaluate"]);
+
+      const levelRows = levels.length
+        ? levels.map((l, idx) => [`${l.label} geometry`, `y = ${fmt(l.y)} ft, x = ${fmt(l.x)} ft, T0 = ${fmt(l.Tpret)} kips`])
+        : [["Guy levels", "None"]];
+
+      const intro = [
+        `<div class="hdr">
+           <div>
+             <div><b>Location:</b> _______________________________</div>
+             <div><b>Subject:</b> Guying Analysis</div>
+           </div>
+           <div class="right">
+             <div><b>Calc ID:</b> ____________________</div>
+             <div><b>Prepared by:</b> ________________</div>
+           </div>
+         </div>`,
+        `<div class="title">Catenary guying calculation report</div>`,
+        `<div class="box"><h3>Technical summary</h3>${kv(summaryRows)}</div>`,
+        `<div class="box"><h3>Guy levels</h3>${kv(levelRows)}</div>`,
+        `<div class="small muted">Note: Detailed step-by-step backup is provided below and mirrors the underlying solver outputs.</div>`
+      ].join("");
+
+      const sections = splitReportSections(lines);
+
+      // Put each numbered section on its own "page" to mimic the template’s sheet feel.
+      const pages = [];
+      pages.push(`<div class="page">${intro}</div>`);
+
+      let firstDetail = true;
+      for (const sec of sections) {
+        // skip completely empty section
+        const bodyText = sec.body.join("\n").trim();
+        if (!sec.title && !bodyText) continue;
+
+        const title = sec.title ? `<div class="title">${escapeHtml(sec.title)}</div>` : `<div class="title">Report detail</div>`;
+        let hdrHtml = "";
+        if (firstDetail) {
+          hdrHtml = `<div class="hdr">
+                      <div>
+                        <div><b>Project:</b> ________________________________</div>
+                      </div>
+                      <div class="right">
+                        <div><b>Date:</b> ${escapeHtml(dateStr)}</div>
+                      </div>
+                    </div>`;
+          firstDetail = false;
+        }
+
+        pages.push(
+          `<div class="page">
+             ${hdrHtml}
+             ${title}
+             <div class="box">
+               <pre class="mono">${escapeHtml(sec.body.join("\n"))}</pre>
+             </div>
+           </div>`
+        );
+      }
+
+      return pages.join("");
+    }
+
+    function generateReport(result) {
+      const {
+        baseType,
+        input,
+        levelsMeta,
+        base,
+        catenaryPretension,
+        pretensionSag_in,
+        pretension_x0,
+        pretension_L_stretched,
+        catenaryWindLevels,
+        catenaryLeewLevels,
+        sagWind_in,
+        sagLeew_in,
+        defGuy_in,
+        defTop_in,
+        maxTensionWind,
+        maxTensionLeew,
+        fosWind
+      } = result;
+      const windLevels = base.windLevels || [], leewLevels = base.leewLevels || [];
+      const lines = [];
+      const EI_ft2 = isFinite(input.EI_ft2) ? input.EI_ft2 : (isFinite(input.EI_in2) ? input.EI_in2 / 144.0 : 0);
+      const addChordLines = (state, Lz) => {
+        if (!state) { lines.push("    Chord: not available."); return; }
+        const dx = (state.dx !== undefined) ? state.dx : (state.xTop - state.xAnchor);
+        const dy = (state.dy !== undefined) ? state.dy : (state.yTop - state.yAnchor);
+        const L = state.L || state.L_chord;
+        const T = state.T_chord;
+        const Hh = state.H_horizontal;
+        const V = (L > 0) ? Math.abs(T * dy / L) : 0;
+        lines.push(`    dx = xTop - xA = ${fmt(dx)} ft, dy = yTop - yA = ${fmt(dy)} ft`);
+        lines.push(`    L = sqrt(dx^2 + dy^2) = ${fmt(L)} ft`);
+        lines.push(`    T = EA*(L - Lz)/Lz = ${fmt(input.EA)}*(${fmt(L)}-${fmt(Lz)})/${fmt(Lz)} = ${fmt(T)} kips`);
+        lines.push(`    H = |T*dx/L| = ${fmt(Hh)} kips, V = |T*dy/L| = ${fmt(V)} kips`);
+      };
+      const addCatenaryLines = (state, cat, label) => {
+        if (!state || !cat) { lines.push(`    ${label}: not evaluated.`); return; }
+        const Lh = Math.abs(state.xTop - state.xAnchor);
+        const dy = state.yTop - state.yAnchor;
+        const Hh = cat.a * input.w_kipft;
+        lines.push(`    ${label}: Lh = |xTop - xA| = ${fmt(Lh)} ft, dy = ${fmt(dy)} ft`);
+        lines.push(`      a = H/w = ${fmt(Hh)}/${fmt(input.w_kipft)} = ${fmt(cat.a)} ft`);
+        lines.push(`      x0 = Lh/2 - a*asinh(dy/(2a*sinh(Lh/(2a)))) = ${fmt(cat.x0Local)} ft`);
+        lines.push(`      sag_max = ${fmt(cat.maxSag * 12)} in`);
+        lines.push(`      T_anchor = H*cosh(x0/a) = ${fmt(cat.T_anchor)} kips; T_top = H*cosh((Lh-x0)/a) = ${fmt(cat.T_top)} kips`);
+      };
+      lines.push("GUYING ANALYSIS - CALCULATION REPORT (US UNITS)");
+      lines.push("===============================================");
+      lines.push("");
+      lines.push("Units:");
+      lines.push("  Length: ft (geometry), in (deflections/sag)");
+      lines.push("  Force: kips");
+      lines.push("  Line loads: kips/ft");
+      lines.push("  Cable weight: lb/ft (internally kips/ft)");
+      lines.push("  Modulus: ksi, Area: in^2 (EA in kips)");
+      lines.push("  Mast EI: kip-in^2 (converted to kip-ft^2 for deflection equations)");
+      lines.push("");
+      lines.push("1. INPUT DATA");
+      lines.push("-------------");
+      lines.push(`Base condition         : ${baseType === "pinned" ? "Pinned (no base moment)" : "Fixed (cantilever with EI)"}`);
+      lines.push(`Structure height H     : ${fmt(input.H)} ft`);
+      levelsMeta.forEach(lvl => {
+        lines.push(`${lvl.label} : y = ${fmt(lvl.y)} ft, x = ${fmt(lvl.x)} ft, T0 = ${fmt(lvl.Tpret)} kips`);
+      });
+      lines.push(`Uniform line load q    : ${fmt(input.q)} kips/ft`);
+      if (baseType === "fixed") lines.push(`Mast flexural stiffness EI : ${fmt(input.EI_in2)} kip-in^2 (${fmt(EI_ft2)} kip-ft^2)`);
+      lines.push(`Pretension T0          : ${fmt(input.T0)} kips (each guy)`);
+      if (base && base.error) lines.push(`WARNING: ${base.error}`);
+      lines.push(`Cable area A           : ${fmt(input.A)} in^2`);
+      lines.push(`Modulus E              : ${fmt(input.E)} ksi (EA = ${fmt(input.EA)} kips)`);
+      lines.push(`Cable weight w         : ${fmt(input.w_lbft)} lb/ft = ${fmt(input.w_kipft)} kips/ft`);
+      lines.push(`Breaking strength (windward) : ${fmt(input.R_break)} kips`);
+      lines.push("");
+      lines.push("Initial chord length (vertical mast):");
+      levelsMeta.forEach(lvl => {
+        const L0 = Math.hypot(lvl.x, lvl.y);
+        const Lz = (lvl.Tpret > 0) ? (L0 / (1 + lvl.Tpret / input.EA)) : L0;
+        const H0 = lvl.Tpret > 0 && L0 > 0 ? lvl.Tpret * (lvl.x / L0) : 0;
+        lines.push(`  ${lvl.label}: L0 = sqrt(x^2 + y^2) = sqrt(${fmt(lvl.x)}^2 + ${fmt(lvl.y)}^2) = ${fmt(L0)} ft`);
+        lines.push(`    Lz = L0/(1 + T0/EA) = ${fmt(L0)}/(1 + ${fmt(lvl.Tpret)}/${fmt(input.EA)}) = ${fmt(Lz)} ft`);
+        lines.push(`    H0 = T0*(x/L0) = ${fmt(lvl.Tpret)}*(${fmt(lvl.x)}/${fmt(L0)}) = ${fmt(H0)} kips`);
+      });
+      lines.push(`  Stretched length under pretension (Level 1) = ${fmt(pretension_L_stretched)} ft`);
+      lines.push("");
+      lines.push("Pretension catenary (no wind, mast vertical, Level 1 shown):");
+      if (!catenaryPretension) {
+        lines.push("  Not evaluated (requires T0 > 0 and cable weight > 0).");
+      } else {
+        lines.push(`  Horizontal shift parameter x0 = ${fmt(pretension_x0)} ft`);
+        lines.push(`  Max sag vs chord = ${fmt(pretensionSag_in)} in`);
+        lines.push(`  Top tension = ${fmt(catenaryPretension.T_top)} kips; Bottom tension = ${fmt(catenaryPretension.T_anchor)} kips`);
+      }
+      lines.push("");
+      if (baseType === "pinned") {
+        lines.push("2. PINNED-BASE STATICS");
+        lines.push("----------------------");
+        const M_base = input.q * input.H * input.H / 2;
+        lines.push("  Base moment = 0 -> guy horizontal components carry overturning.");
+        lines.push(`  Base overturning moment: M = q*H^2/2 = ${fmt(input.q)}*${fmt(input.H)}^2/2 = ${fmt(M_base)} kip-ft`);
+        lines.push("  Solve mast rotation theta such that sum(H_i * y_i) = M.");
+        lines.push(`  theta = ${fmt(base.theta, 6)} rad`);
+        levelsMeta.forEach((lvl, idx) => {
+          const L0 = Math.hypot(lvl.x, lvl.y);
+          const Lz = (lvl.Tpret > 0) ? (L0 / (1 + lvl.Tpret / input.EA)) : L0;
+          lines.push(`  ${lvl.label} windward (anchor x = -${fmt(lvl.x)} ft):`);
+          addChordLines(windLevels[idx], Lz);
+          lines.push(`  ${lvl.label} leeward (anchor x = +${fmt(lvl.x)} ft):`);
+          addChordLines(leewLevels[idx], Lz);
+        });
+        lines.push("");
+      } else {
+        lines.push("2. FIXED-BASE COMPATIBILITY (FLEXIBLE CANTILEVER)");
+        lines.push("-----------------------------------------------");
+        lines.push("  Cantilever with uniform load q on height H, guys at +/- x1, height y1.");
+        lines.push(`  EI = ${fmt(input.EI_in2)} kip-in^2 = ${fmt(EI_ft2)} kip-ft^2`);
+        lines.push("  Deflection from uniform load at y1:");
+        lines.push("    delta_q(y1) = q*y1^2/(24*EI) * (6H^2 - 4Hy1 + y1^2)");
+        const delta_q_y1 = (EI_ft2 > 0)
+          ? (input.q * input.y1 * input.y1 / (24 * EI_ft2) * (6 * input.H * input.H - 4 * input.H * input.y1 + input.y1 * input.y1))
+          : 0;
+        lines.push(`    = ${fmt(input.q)}*${fmt(input.y1)}^2/(24*${fmt(EI_ft2)})*(...) = ${fmt(delta_q_y1)} ft`);
+        lines.push("  Deflection due to horizontal force P at y1:");
+        lines.push("    delta_P(y1) = P*y1^3/(3*EI)");
+        lines.push("    delta_P(top) = P*y1^2*(3H - y1)/(6*EI)");
+        lines.push("  Compatibility: u(y1) = delta_q(y1) + delta_P from windward+leeward forces, solved iteratively.");
+        const uq_top = base.def_q_top || 0;
+        const uq_levels = base.def_q_levels || [];
+        uq_levels.forEach(d => {
+          lines.push(`  u_q(${fmt(d.y)} ft) = ${fmt(d.ux * 12)} in`);
+        });
+        lines.push(`  u_q(top) = ${fmt(uq_top * 12)} in`);
+        if (base.def_levels && base.def_levels.length) {
+          base.def_levels.forEach((d, idx) => {
+            lines.push(`  ${levelsMeta[idx].label}: u = ${fmt(d.ux)} ft = ${fmt(d.ux * 12)} in; P = ${fmt(d.P)} kips`);
+            const L0 = Math.hypot(levelsMeta[idx].x, levelsMeta[idx].y);
+            const Lz = (levelsMeta[idx].Tpret > 0) ? (L0 / (1 + levelsMeta[idx].Tpret / input.EA)) : L0;
+            lines.push("    Windward chord:");
+            addChordLines(windLevels[idx], Lz);
+            lines.push("    Leeward chord:");
+            addChordLines(leewLevels[idx], Lz);
+          });
+        }
+        lines.push("");
+      }
+      lines.push("3. DEFLECTIONS");
+      lines.push("--------------");
+      levelsMeta.forEach((lvl, idx) => {
+        lines.push(`  u_x(${lvl.label}) = ${fmt(defGuy_in[idx] || 0)} in`);
+      });
+      lines.push(`  u_x(H)  = ${fmt(defTop_in)} in`);
+      lines.push("");
+      lines.push("4. CATENARY (SELF-WEIGHT) AND FORCES");
+      lines.push("------------------------------------");
+      if ((!catenaryWindLevels || catenaryWindLevels.length === 0) && (!catenaryLeewLevels || catenaryLeewLevels.length === 0)) {
+        lines.push("  Cable weight or horizontal component is zero; catenary not evaluated.");
+      } else {
+        levelsMeta.forEach((lvl, idx) => {
+          const cW = catenaryWindLevels[idx];
+          const cL = catenaryLeewLevels[idx];
+          lines.push(`  ${lvl.label}: y=${fmt(lvl.y)} ft`);
+          if (cW) {
+            lines.push(`    Windward: a=${fmt(cW.a)} ft; x0=${fmt(cW.x0Local)} ft; sag=${fmt(sagWind_in[idx])} in; T_max=${fmt(cW.T_max)} kips; Anchor: H=${fmt(cW.FxAnchor)} kips, V=${fmt(cW.FyAnchor)} kips; Top: H=${fmt(cW.FxTop)} kips, V=${fmt(cW.FyTop)} kips`);
+          } else {
+            lines.push("    Windward: not evaluated (slack/zero weight).");
+          }
+          if (cL) {
+            lines.push(`    Leeward: a=${fmt(cL.a)} ft; x0=${fmt(cL.x0Local)} ft; sag=${fmt(sagLeew_in[idx])} in; T_max=${fmt(cL.T_max)} kips (anchor=${fmt(cL.T_anchor)}, top=${fmt(cL.T_top)})`);
+          } else if (leewLevels[idx]) {
+            lines.push("    Leeward: slack or not evaluated.");
+          }
+          if (input.w_kipft > 0) {
+            addCatenaryLines(windLevels[idx], cW, "Windward equations");
+            addCatenaryLines(leewLevels[idx], cL, "Leeward equations");
+          }
+        });
+      }
+      lines.push("");
+      lines.push("5. SAFETY CHECK");
+      lines.push("---------------");
+      if (levelsMeta && levelsMeta.length > 0) {
+        levelsMeta.forEach((lvl, idx) => {
+          const fos = result.fosLevels ? result.fosLevels[idx] : null;
+          if (fos) {
+            lines.push(`  ${lvl.label} FOS (windward) = ${fmt(fos, 2)} (R_break / T_max)`);
+          } else if (input.R_break > 0) {
+            lines.push(`  ${lvl.label} FOS (windward): Breaking strength provided (${fmt(input.R_break)} kips) but computed T_max is zero; FOS not available.`);
+          } else {
+            lines.push(`  ${lvl.label} FOS (windward): provide breaking strength to evaluate.`);
+          }
+        });
+      } else if (fosWind) {
+        lines.push(`  Factor of safety (windward) = ${fmt(fosWind, 2)} (R_break / T_max,w)`);
+      } else if (input.R_break > 0) {
+        lines.push(`  Factor of safety (windward): Breaking strength provided (${fmt(input.R_break)} kips) but computed T_max is zero; FOS not available.`);
+      } else {
+        lines.push("  Factor of safety (windward): provide breaking strength to evaluate.");
+      }
+      if (leewLevels && leewLevels.length > 0) {
+        leewLevels.forEach((ll, idx) => {
+          if (!ll) return;
+          lines.push(`  ${levelsMeta[idx].label} leeward tension after deflection = ${fmt(ll.T_chord)} kips${ll.T_chord <= 0 ? " (slack)" : ""}`);
+        });
+      }
+      lines.push("");
+      lines.push("End of report.");
+      return buildReportHtml(result, lines);
+    }
+
+    drawDiagram(null);
+    window.addEventListener("resize", () => drawDiagram(lastResult));
+  </script>
+</body>
+</html>
