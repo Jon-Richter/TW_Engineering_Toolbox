@@ -1,1 +1,4 @@
 .git_backup/
+# Build artifacts
+dist/
+build/
