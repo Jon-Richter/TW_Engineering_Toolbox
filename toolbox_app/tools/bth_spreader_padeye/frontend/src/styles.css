@@ -28,7 +28,6 @@ body {
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
   color: var(--text);
   min-height: 100vh;
-  background-attachment: fixed;
 }
 
 body::before {
@@ -129,7 +128,9 @@ h1 {
   padding: 16px;
   background: var(--panel);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
+  transform: translateZ(0);
   animation: cardIn 0.6s ease both;
 }
 

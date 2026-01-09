@@ -35,25 +35,23 @@ def render_report_html(trace: Dict[str, Any]) -> str:
 
     def step(s):
         vars_rows="".join([f"<tr><td class='mono'>{_e(v['symbol'])}</td><td>{_e(v['description'])}</td><td>{_e(v['value'])}</td><td>{_e(v['units'])}</td><td>{_e(v['source'])}</td></tr>" for v in s['variables']])
-        refs="; ".join([f"{_e(r['type'])}:{_e(r['ref'])}" for r in s.get('references',[])])
         chk=""
         if s.get('checks'):
             chk_rows="".join([f"<tr><td>{_e(c['label'])}</td><td>{_e(c['demand'])}</td><td>{_e(c['capacity'])}</td><td>{_e(c['ratio'])}</td><td class='{ 'pf-pass' if c['pass_fail']=='PASS' else 'pf-fail' }'>{_e(c['pass_fail'])}</td></tr>" for c in s['checks']])
             chk=f"<div class='card'><div class='title'>Check</div><table><tr><th>Label</th><th>Demand</th><th>Capacity</th><th>Ratio</th><th>Status</th></tr>{chk_rows}</table></div>"
+        rounded_val = s['result_rounded']['value']
+        try:
+            rounded_val = f"{float(rounded_val):.2f}"
+        except (ValueError, TypeError):
+            pass
         return f"""        <div class='card'>
           <div class='title'>{_e(s['id'])} — {_e(s['section'])}: {_e(s['title'])}</div>
-          <div class='sub'><b>Output:</b> <span class='mono'>{_e(s['output_symbol'])}</span> — {_e(s['output_description'])}</div>
-          <div class='sub'><b>Reference:</b> {_e(refs) if refs else 'derived'}</div>
           <div class='sub' style='margin-top:8px'><b>1) Equation</b></div>
           <div class='eq'>{_e(s['equation_latex'])}</div>
-          <div class='sub' style='margin-top:8px'><b>2) Numeric substitution</b></div>
-          <div class='eq'>{_e(s['substitution_latex'])}</div>
-          <div class='sub' style='margin-top:8px'><b>3) Variables</b></div>
+          <div class='sub' style='margin-top:8px'><b>2) Variables</b></div>
           <table><tr><th>Symbol</th><th>Description</th><th>Value</th><th>Units</th><th>Source</th></tr>{vars_rows}</table>
-          <div class='sub' style='margin-top:8px'><b>4) Result</b></div>
-          <div class='mono'>Unrounded: {_e(s['result_unrounded']['value'])} {_e(s['result_unrounded']['units'])}</div>
-          <div class='mono'>Rounding: {_e(s['rounding']['rule'])}({_e(s['rounding']['decimals_or_sigfigs'])})</div>
-          <div class='mono'>Rounded (used downstream): {_e(s['result_rounded']['value'])} {_e(s['result_rounded']['units'])}</div>
+          <div class='sub' style='margin-top:8px'><b>3) Result</b></div>
+          <div class='eq'><b>{_e(rounded_val)} {_e(s['result_rounded']['units'])}</b></div>
         </div>
         {chk}
         """

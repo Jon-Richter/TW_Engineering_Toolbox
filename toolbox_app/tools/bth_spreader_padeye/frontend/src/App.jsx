@@ -248,6 +248,8 @@ export default function App() {
   const [resultsByMode, setResultsByMode] = useState({ padeye: null, spreader: null });
   const [errorByMode, setErrorByMode] = useState({ padeye: null, spreader: null });
   const [noteByMode, setNoteByMode] = useState({ padeye: null, spreader: null });
+  const [reportVisibleByMode, setReportVisibleByMode] = useState({ padeye: false, spreader: false });
+  const [reportTokenByMode, setReportTokenByMode] = useState({ padeye: 0, spreader: 0 });
 
   function withBase(url) {
     if (!apiBase) return url;
@@ -335,12 +337,14 @@ export default function App() {
       const json = await response.json();
       if (!json.ok) throw new Error(json.error || "Solve failed");
       setResultsByMode((prev) => ({ ...prev, [activeMode]: json.results }));
+      return json.results;
     } catch (err) {
       const message =
         err && err.name === "AbortError"
           ? "Solve timed out after 30s. Check backend logs for errors."
           : String((err && err.message) || err || "Unknown error");
       setErrorByMode((prev) => ({ ...prev, [activeMode]: message }));
+      return null;
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
       setBusyByMode((prev) => ({ ...prev, [activeMode]: false }));
@@ -372,6 +376,9 @@ export default function App() {
     }
 
     const valid = inputsAreValid(mode);
+    setReportVisibleByMode((prev) =>
+      prev[mode] ? { ...prev, [mode]: false } : prev
+    );
     if (!valid) {
       setNoteByMode((prev) => ({ ...prev, [mode]: "Waiting for valid inputs" }));
       return;
@@ -386,6 +393,27 @@ export default function App() {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify({ mode, designCategory, Fy, Fu, impact, pad, spr, shackleId })]);
+
+  function buildReportUrl(targetMode, token) {
+    const stamp = token ? `&t=${token}` : "";
+    return `${apiBase}/api/report.html?mode=${targetMode}${stamp}`;
+  }
+
+  function handleViewReport(ev) {
+    const activeMode = mode;
+    if (busyByMode[activeMode]) {
+      if (ev) ev.preventDefault();
+      setNoteByMode((prev) => ({ ...prev, [activeMode]: "Analysis running. Try again in a moment." }));
+      return;
+    }
+    const token = Date.now();
+    const url = buildReportUrl(activeMode, token);
+    setReportTokenByMode((prev) => ({ ...prev, [activeMode]: token }));
+    setReportVisibleByMode((prev) => ({ ...prev, [activeMode]: true }));
+    if (ev && ev.currentTarget) {
+      ev.currentTarget.href = url;
+    }
+  }
 
   async function optimizeTheta() {
     const activeMode = "padeye";
@@ -495,7 +523,9 @@ export default function App() {
   const error = errorByMode[mode];
   const note = noteByMode[mode];
   const busy = busyByMode[mode];
-  const reportUrl = results ? `${apiBase}/api/report.html?mode=${mode}` : "";
+  const reportToken = reportTokenByMode[mode];
+  const reportUrl = results ? buildReportUrl(mode, reportToken) : "";
+  const reportVisible = reportVisibleByMode[mode];
   const artifacts = results && results.artifacts ? results.artifacts : {};
   const checks = results && Array.isArray(results.checks) ? results.checks : [];
   const hasChecks = checks.length > 0;
@@ -561,6 +591,23 @@ export default function App() {
     ]
   };
   const hiddenOutputs = new Set(["governing_step"]);
+
+  function formatOutputValue(key, value) {
+    if (key === "governing_ratio") {
+      const numeric = typeof value === "number" ? value : Number(value);
+      if (Number.isFinite(numeric)) return numeric.toFixed(3);
+      if (value && typeof value === "object" && Number.isFinite(Number(value.value))) {
+        const units = value.units ? ` ${value.units}` : "";
+        return `${Number(value.value).toFixed(3)}${units}`;
+      }
+    }
+    if (value && typeof value === "object") {
+      if (Object.prototype.hasOwnProperty.call(value, "value")) {
+        return `${value.value} ${value.units || ""}`.trim();
+      }
+    }
+    return String(value);
+  }
 
   const orderedOutputs = (() => {
     if (!results || !results.key_outputs) return [];
@@ -931,20 +978,30 @@ export default function App() {
             ) : (
               <div>
                 <div className="kvgrid">
-                  {orderedOutputs.map(([key, value]) => (
-                    <div className="kv" key={key}>
-                      <div className="k">{outputLabelMap[key] || key.replace(/_/g, " ")}</div>
-                      <div className="v">
-                        {typeof value === "object" ? `${value.value} ${value.units || ""}` : String(value)}
+                  {orderedOutputs.map(([key, value]) => {
+                    let governingUtilStyle = {};
+                    if (key === "governing_ratio") {
+                      const numeric = typeof value === "number" ? value : Number(value);
+                      const numVal = Number.isFinite(numeric) ? numeric : (value && typeof value === "object" && Number.isFinite(Number(value.value)) ? Number(value.value) : null);
+                      if (numVal !== null) {
+                        governingUtilStyle = numVal > 1 ? { backgroundColor: "#ffcccc", borderColor: "#cc0000" } : { backgroundColor: "#ccffcc", borderColor: "#00aa00" };
+                      }
+                    }
+                    return (
+                      <div className="kv" key={key} style={governingUtilStyle}>
+                        <div className="k">{outputLabelMap[key] || key.replace(/_/g, " ")}</div>
+                        <div className="v">
+                          {formatOutputValue(key, value)}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="links">
-                  <a className="link" href={reportUrl} target="_blank" rel="noreferrer">
+                  <a className="link" href={reportUrl} target="_blank" rel="noreferrer" onClick={handleViewReport}>
                     View Calc Package
                   </a>
-                  <a className="link" href={reportUrl} target="_blank" rel="noreferrer">
+                  <a className="link" href={reportUrl} target="_blank" rel="noreferrer" onClick={handleViewReport}>
                     Print / Save PDF
                   </a>
                   {Object.entries(artifacts).map(([name, url]) => (
@@ -976,11 +1033,11 @@ export default function App() {
             <div className="card-title card-title--tight">
               Calc Package Viewer
             </div>
-            {results ? (
+            {reportVisible && results ? (
               <iframe title="report" src={reportUrl} />
             ) : (
               <div className="placeholder">
-                Run analysis to generate the calc package for this mode.
+                Click View Calc Package to load the latest report for this mode.
               </div>
             )}
           </div>
