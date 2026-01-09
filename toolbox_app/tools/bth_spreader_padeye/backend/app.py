@@ -446,7 +446,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     def chk_eq(_u,_r):
         ratio = seq / Fallow if Fallow>0 else 1e9
-        return [dict(label="Padeye base combined stress", demand=seq, capacity=Fallow, ratio=ratio, pass_fail="PASS" if ratio<=1 else "FAIL")]
+        return [dict(label="Combined Stress at Base of Padeye", demand=seq, capacity=Fallow, ratio=ratio, pass_fail="PASS" if ratio<=1 else "FAIL")]
 
     Ueq = compute_step(
         trace, "P-086", "Padeye Base Stresses", "Utilization (equivalent stress)",
@@ -461,6 +461,122 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
         references=[dict(type="derived", ref="backend._solve_padeye:UtilizationEqStress")],
         checks_builder=chk_eq
+    )
+
+    f_t = compute_step(
+        trace, "P-087", "Padeye Base Stresses", "Axial stress at base",
+        "f_t", "Axial stress magnitude at base",
+        "f_t = abs(P_y) / A",
+        variables=[
+            dict(symbol="P_y", description="Axial component", value=Py, units="kip", source="step:P-061"),
+            dict(symbol="A", description="Area", value=A, units="in^2", source="step:P-070"),
+        ],
+        compute_fn=lambda v: abs(v["P_y"]) / v["A"] if v["A"] > 0 else 0.0,
+        units="ksi",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:AxialStressBase")]
+    )
+
+    f_b_in = compute_step(
+        trace, "P-088", "Padeye Base Stresses", "In-plane bending stress at base",
+        "f_b_in", "Strong-axis bending stress magnitude",
+        "f_b_in = abs(M_z) / S_z",
+        variables=[
+            dict(symbol="M_z", description="Strong-axis moment", value=Mz, units="kip-in", source="step:P-064"),
+            dict(symbol="S_z", description="Strong-axis section modulus", value=Sz, units="in^3", source="step:P-071"),
+        ],
+        compute_fn=lambda v: abs(v["M_z"]) / v["S_z"] if v["S_z"] > 0 else 0.0,
+        units="ksi",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:StrongAxisBendingStressBase")]
+    )
+
+    f_b_out = compute_step(
+        trace, "P-089", "Padeye Base Stresses", "Out-of-plane bending stress at base",
+        "f_b_out", "Weak-axis bending stress magnitude",
+        "f_b_out = abs(M_x) / S_x",
+        variables=[
+            dict(symbol="M_x", description="Weak-axis moment", value=Mx, units="kip-in", source="step:P-065"),
+            dict(symbol="S_x", description="Weak-axis section modulus", value=Sx, units="in^3", source="step:P-072"),
+        ],
+        compute_fn=lambda v: abs(v["M_x"]) / v["S_x"] if v["S_x"] > 0 else 0.0,
+        units="ksi",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:WeakAxisBendingStressBase")]
+    )
+
+    Fv_allow = compute_step(
+        trace, "P-090", "Padeye Base Stresses", "Allowable shear stress at base",
+        "F_v", "Allowable shear stress",
+        "F_v = 0.6 * F_y / N_d",
+        variables=[
+            dict(symbol="F_y", description="Yield strength", value=inp.Fy, units="ksi", source="input:Fy"),
+            dict(symbol="N_d", description="Design factor", value=inp.Nd, units="-", source="input:Nd"),
+        ],
+        compute_fn=lambda v: 0.6 * v["F_y"] / v["N_d"],
+        units="ksi",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:ShearAllowableBase")]
+    )
+
+    compute_step(
+        trace, "P-091", "Padeye Base Stresses", "Utilization: base shear",
+        "U_v", "Shear utilization at base",
+        "U_v = f_v / F_v",
+        variables=[
+            dict(symbol="f_v", description="Total shear stress", value=tau, units="ksi", source="step:P-083"),
+            dict(symbol="F_v", description="Allowable shear stress", value=Fv_allow, units="ksi", source="step:P-090"),
+        ],
+        compute_fn=lambda v: v["f_v"] / v["F_v"] if v["F_v"] > 0 else 1e9,
+        units="-",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:ShearUtilizationBase")],
+        checks_builder=lambda _u,_r: [dict(label="Shear at Base of Padeye", demand=tau, capacity=Fv_allow, ratio=(tau/Fv_allow if Fv_allow>0 else 1e9), pass_fail="PASS" if tau <= Fv_allow else "FAIL")]
+    )
+
+    compute_step(
+        trace, "P-092", "Padeye Base Stresses", "Utilization: in-plane bending",
+        "U_b_in", "In-plane bending utilization at base",
+        "U_b_in = f_b_in / F_allow",
+        variables=[
+            dict(symbol="f_b_in", description="In-plane bending stress", value=f_b_in, units="ksi", source="step:P-088"),
+            dict(symbol="F_allow", description="Allowable stress", value=Fallow, units="ksi", source="step:P-085"),
+        ],
+        compute_fn=lambda v: v["f_b_in"] / v["F_allow"] if v["F_allow"] > 0 else 1e9,
+        units="-",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:InPlaneBendingUtilizationBase")],
+        checks_builder=lambda _u,_r: [dict(label="In-Plane Bending at Base of Padeye", demand=f_b_in, capacity=Fallow, ratio=(f_b_in/Fallow if Fallow>0 else 1e9), pass_fail="PASS" if f_b_in <= Fallow else "FAIL")]
+    )
+
+    compute_step(
+        trace, "P-093", "Padeye Base Stresses", "Utilization: out-of-plane bending",
+        "U_b_out", "Out-of-plane bending utilization at base",
+        "U_b_out = f_b_out / F_allow",
+        variables=[
+            dict(symbol="f_b_out", description="Out-of-plane bending stress", value=f_b_out, units="ksi", source="step:P-089"),
+            dict(symbol="F_allow", description="Allowable stress", value=Fallow, units="ksi", source="step:P-085"),
+        ],
+        compute_fn=lambda v: v["f_b_out"] / v["F_allow"] if v["F_allow"] > 0 else 1e9,
+        units="-",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:OutOfPlaneBendingUtilizationBase")],
+        checks_builder=lambda _u,_r: [dict(label="Out-of-plane Bending at Base of Padeye", demand=f_b_out, capacity=Fallow, ratio=(f_b_out/Fallow if Fallow>0 else 1e9), pass_fail="PASS" if f_b_out <= Fallow else "FAIL")]
+    )
+
+    compute_step(
+        trace, "P-094", "Padeye Base Stresses", "Utilization: base tension",
+        "U_t", "Tension utilization at base",
+        "U_t = f_t / F_allow",
+        variables=[
+            dict(symbol="f_t", description="Axial stress", value=f_t, units="ksi", source="step:P-087"),
+            dict(symbol="F_allow", description="Allowable stress", value=Fallow, units="ksi", source="step:P-085"),
+        ],
+        compute_fn=lambda v: v["f_t"] / v["F_allow"] if v["F_allow"] > 0 else 1e9,
+        units="-",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:TensionUtilizationBase")],
+        checks_builder=lambda _u,_r: [dict(label="Tension at Base of Padeye", demand=f_t, capacity=Fallow, ratio=(f_t/Fallow if Fallow>0 else 1e9), pass_fail="PASS" if f_t <= Fallow else "FAIL")]
     )
 
     # Hole region checks (boss plates included at hole, aligned to BTH sheet Pt/Pb/Pv)
@@ -628,7 +744,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         units="-",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
         references=[dict(type="derived", ref="BTH sheet: Pt utilization")],
-        checks_builder=lambda _u,_r: chk_hole("Hole net tension (Pt)", Pt)
+        checks_builder=lambda _u,_r: chk_hole("Allowable Tensile Strength Through Pin Hole, Pt", Pt)
     )
 
     compute_step(
@@ -643,7 +759,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         units="-",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
         references=[dict(type="derived", ref="BTH sheet: Pb utilization")],
-        checks_builder=lambda _u,_r: chk_hole("Hole fracture (Pb)", Pb)
+        checks_builder=lambda _u,_r: chk_hole("Allowable Single Plane Fracture Strength, Pb", Pb)
     )
 
     compute_step(
@@ -658,7 +774,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         units="-",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
         references=[dict(type="derived", ref="BTH sheet: Pv utilization")],
-        checks_builder=lambda _u,_r: chk_hole("Hole shear-out (Pv)", Pv)
+        checks_builder=lambda _u,_r: chk_hole("Allowable Double Plane Shear Strength, Pv", Pv)
     )
 
     fp = compute_step(
@@ -702,7 +818,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         units="-",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
         references=[dict(type="code", ref="ASME BTH-1-2023 §3-3.3.4 bearing check")],
-        checks_builder=lambda _u,_r: [dict(label="Pin bearing", demand=fp, capacity=Fp_allow, ratio=(fp/Fp_allow if Fp_allow>0 else 1e9), pass_fail="PASS" if fp<=Fp_allow else "FAIL")]
+        checks_builder=lambda _u,_r: [dict(label="Pin Bearing Stress", demand=fp, capacity=Fp_allow, ratio=(fp/Fp_allow if Fp_allow>0 else 1e9), pass_fail="PASS" if fp<=Fp_allow else "FAIL")]
     )
 
     A_gross_hole = compute_step(
@@ -820,7 +936,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         units="-",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
         references=[dict(type="code", ref="ASME BTH-1-2023 Ch.3 eq. (3-37)")],
-        checks_builder=lambda u,_r: [dict(label="Hole combined stress (3-3.3.2)", demand=u, capacity=1.0, ratio=u, pass_fail="PASS" if u<=1.0 else "FAIL")]
+        checks_builder=lambda u,_r: [dict(label="Hole Combined Stress", demand=u, capacity=1.0, ratio=u, pass_fail="PASS" if u<=1.0 else "FAIL")]
     )
 
     ratios=[]
@@ -842,9 +958,6 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
             "Px": {"value": Px, "units":"kip"},
             "Py": {"value": Py, "units":"kip"},
             "Pz": {"value": Pz, "units":"kip"},
-            "sigma_eq": {"value": seq, "units":"ksi"},
-            "F_allow": {"value": Fallow, "units":"ksi"},
-            "U_base": {"value": Ueq, "units":"-"},
             "governing_ratio": {"value": gov[0], "units":"-"},
             "governing_step": {"value": gov[1], "units":""},
             "governing_check": {"value": gov[2], "units":""},

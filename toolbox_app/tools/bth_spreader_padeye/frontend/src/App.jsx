@@ -52,6 +52,138 @@ function formatWll(value) {
   return fixed.replace(/\.?0+$/, "");
 }
 
+function formatDim(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "-";
+  const fixed = n.toFixed(2);
+  return fixed.replace(/\.?0+$/, "");
+}
+
+function PadeyeDiagram({ H, h, w, Wb, t, Dh, R }) {
+  const svgW = 640;
+  const svgH = 420;
+  const pad = 60;
+
+  const safe = (value, fallback) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+
+  const WbVal = safe(Wb, 1);
+  const HVal = safe(H, 1);
+  const wVal = safe(w, WbVal * 0.6);
+  const hVal = Math.min(safe(h, HVal * 0.7), HVal);
+  const DhVal = Math.min(safe(Dh, Math.max(wVal * 0.35, 0.1)), wVal * 0.9);
+  const RVal = safe(R, Math.max(HVal - hVal, HVal * 0.25));
+
+  const scale = Math.min((svgW - 2 * pad) / WbVal, (svgH - 2 * pad) / HVal);
+  const baseX = (svgW - WbVal * scale) / 2;
+  const baseY = svgH - pad;
+  const topY = baseY - HVal * scale;
+  const centerX = baseX + (WbVal * scale) / 2;
+  const holeY = baseY - hVal * scale;
+  const halfW = (wVal * scale) / 2;
+  const holeR = (DhVal * scale) / 2;
+
+  const leftBase = { x: baseX, y: baseY };
+  const rightBase = { x: baseX + WbVal * scale, y: baseY };
+  const leftShoulder = { x: centerX - halfW, y: holeY };
+  const rightShoulder = { x: centerX + halfW, y: holeY };
+
+  const arcCtrlOffset = Math.max(halfW * 0.55, 12);
+  const path = [
+    `M ${leftBase.x} ${leftBase.y}`,
+    `L ${rightBase.x} ${rightBase.y}`,
+    `L ${rightShoulder.x} ${rightShoulder.y}`,
+    `Q ${centerX + arcCtrlOffset} ${topY} ${centerX} ${topY}`,
+    `Q ${centerX - arcCtrlOffset} ${topY} ${leftShoulder.x} ${leftShoulder.y}`,
+    `L ${leftBase.x} ${leftBase.y}`,
+    "Z"
+  ].join(" ");
+
+  const leftDimX = baseX - 26;
+  const leftDimX2 = baseX - 12;
+  const wDimY = holeY - 26;
+  const WbDimY = baseY + 28;
+  const DhDimY = holeY + holeR + 22;
+  const rDimX = rightShoulder.x + 26;
+  const tLabelX = rightBase.x + 18;
+  const tLabelY = baseY - (HVal * scale) * 0.45;
+
+  return (
+    <svg className="padeye-diagram" viewBox={`0 0 ${svgW} ${svgH}`} role="img">
+      <defs>
+        <marker
+          id="arrow"
+          markerWidth="8"
+          markerHeight="8"
+          refX="4"
+          refY="4"
+          orient="auto"
+        >
+          <path d="M0,0 L8,4 L0,8 Z" fill="#e2e8f0" />
+        </marker>
+      </defs>
+      <rect x="0" y="0" width={svgW} height={svgH} fill="none" />
+      <line
+        x1={centerX}
+        y1={topY - 18}
+        x2={centerX}
+        y2={baseY + 18}
+        stroke="#94a3b8"
+        strokeDasharray="6 6"
+        strokeWidth="1"
+      />
+      <line
+        x1={baseX - 10}
+        y1={holeY}
+        x2={baseX + WbVal * scale + 10}
+        y2={holeY}
+        stroke="#94a3b8"
+        strokeDasharray="6 6"
+        strokeWidth="1"
+      />
+      <path d={path} fill="none" stroke="#e2e8f0" strokeWidth="2" />
+      <circle cx={centerX} cy={holeY} r={holeR} fill="none" stroke="#e2e8f0" strokeWidth="2" />
+
+      <line x1={leftDimX} y1={baseY} x2={leftDimX} y2={topY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={leftDimX - 6} y={(baseY + topY) / 2} textAnchor="end">
+        {`H ${formatDim(HVal)} in`}
+      </text>
+
+      <line x1={leftDimX2} y1={baseY} x2={leftDimX2} y2={holeY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={leftDimX2 - 6} y={(baseY + holeY) / 2} textAnchor="end">
+        {`h ${formatDim(hVal)} in`}
+      </text>
+
+      <line x1={baseX} y1={WbDimY} x2={rightBase.x} y2={WbDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={centerX} y={WbDimY + 16} textAnchor="middle">
+        {`Wb ${formatDim(WbVal)} in`}
+      </text>
+
+      <line x1={centerX - halfW} y1={wDimY} x2={centerX + halfW} y2={wDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={centerX} y={wDimY - 8} textAnchor="middle">
+        {`w ${formatDim(wVal)} in`}
+      </text>
+
+      <line x1={centerX - holeR} y1={DhDimY} x2={centerX + holeR} y2={DhDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={centerX} y={DhDimY + 16} textAnchor="middle">
+        {`Dh ${formatDim(DhVal)} in`}
+      </text>
+
+      <line x1={rDimX} y1={holeY} x2={rDimX} y2={topY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={rDimX + 6} y={(holeY + topY) / 2} textAnchor="start">
+        {`R ${formatDim(RVal)} in`}
+      </text>
+
+      <line x1={rightBase.x + 4} y1={tLabelY} x2={rightBase.x + 22} y2={tLabelY - 8} stroke="#e2e8f0" strokeWidth="1.2" markerEnd="url(#arrow)" />
+      <text x={tLabelX + 6} y={tLabelY - 12} textAnchor="start">
+        {`t ${formatDim(t)} in`}
+      </text>
+    </svg>
+  );
+}
+
 export default function App() {
   useEffect(() => {
     // inject inline spinner styles for quick visual affordance
@@ -152,8 +284,12 @@ export default function App() {
     if (!selectedShackle) return;
     const e = Number(selectedShackle.eccentricity_in || 0);
     const theta = Number(pad.theta_deg || 0);
-    const ex = e * Math.cos((theta * Math.PI) / 180.0);
-    const ey = e * Math.sin((theta * Math.PI) / 180.0);
+    const beta = Number(pad.beta_deg || 0);
+    const thetaRad = (theta * Math.PI) / 180.0;
+    const betaRad = (beta * Math.PI) / 180.0;
+    const outOfPlane = Math.sin(betaRad);
+    const ex = e * Math.cos(thetaRad) * outOfPlane;
+    const ey = e * Math.sin(thetaRad) * outOfPlane;
     const pin = Number(selectedShackle.pin_diameter_in || pad.Dp);
     setPad((prev) => ({
       ...prev,
@@ -161,7 +297,7 @@ export default function App() {
       ey: Number(ey.toFixed(6)),
       Dp: pin
     }));
-  }, [selectedShackle, pad.theta_deg]);
+  }, [selectedShackle, pad.theta_deg, pad.beta_deg]);
 
   async function runSolve(targetMode, providedSignal) {
     const activeMode = targetMode || mode;
@@ -363,13 +499,32 @@ export default function App() {
   const artifacts = results && results.artifacts ? results.artifacts : {};
   const checks = results && Array.isArray(results.checks) ? results.checks : [];
   const hasChecks = checks.length > 0;
+  const padeyeLimitStateOrder = [
+    "Allowable Tensile Strength Through Pin Hole, Pt",
+    "Allowable Single Plane Fracture Strength, Pb",
+    "Allowable Double Plane Shear Strength, Pv",
+    "Hole Combined Stress",
+    "Pin Bearing Stress",
+    "Shear at Base of Padeye",
+    "In-Plane Bending at Base of Padeye",
+    "Out-of-plane Bending at Base of Padeye",
+    "Tension at Base of Padeye",
+    "Combined Stress at Base of Padeye"
+  ];
+  const orderedChecks = (() => {
+    if (!hasChecks) return [];
+    if (mode !== "padeye") return checks;
+    const orderMap = new Map(padeyeLimitStateOrder.map((label, idx) => [label, idx]));
+    return [...checks].sort((a, b) => {
+      const ai = orderMap.has(a.label) ? orderMap.get(a.label) : padeyeLimitStateOrder.length;
+      const bi = orderMap.has(b.label) ? orderMap.get(b.label) : padeyeLimitStateOrder.length;
+      return ai - bi;
+    });
+  })();
   const outputLabelMap = {
     Px: "Load Component Px",
     Py: "Load Component Py",
     Pz: "Load Component Pz",
-    sigma_eq: "Equivalent Stress",
-    F_allow: "Allowable Stress",
-    U_base: "Base Utilization",
     governing_ratio: "Governing Utilization",
     governing_check: "Governing Limit State",
     M_sw: "Self-Weight Moment",
@@ -388,9 +543,6 @@ export default function App() {
       "Px",
       "Py",
       "Pz",
-      "sigma_eq",
-      "F_allow",
-      "U_base",
       "governing_ratio",
       "governing_check"
     ],
@@ -758,6 +910,20 @@ export default function App() {
         </div>
 
         <div>
+          {mode === "padeye" ? (
+            <div className="card" style={{ marginBottom: "16px" }}>
+              <div className="card-title">Padeye Diagram</div>
+              <PadeyeDiagram
+                H={pad.H}
+                h={pad.h}
+                w={pad.w}
+                Wb={pad.Wb}
+                t={pad.t}
+                Dh={pad.Dh}
+                R={pad.R}
+              />
+            </div>
+          ) : null}
           <div className="card" style={{ marginBottom: "16px" }}>
             <div className="card-title">Results</div>
             {!results ? (
@@ -791,7 +957,7 @@ export default function App() {
                   <div className="limit-state">
                     <div className="section-title">Limit State Utilizations</div>
                     <div className="checks">
-                      {checks.map((check, idx) => (
+                      {orderedChecks.map((check, idx) => (
                         <div className="check-row" key={`${check.step_id}-${check.label}-${idx}`}>
                           <div className="check-label">{check.label}</div>
                           <div className="check-meta">{check.step_id}</div>
