@@ -290,8 +290,8 @@ export default function App() {
     const thetaRad = (theta * Math.PI) / 180.0;
     const betaRad = (beta * Math.PI) / 180.0;
     const outOfPlane = Math.sin(betaRad);
-    const ex = e * Math.cos(thetaRad) * outOfPlane;
-    const ey = e * Math.sin(thetaRad) * outOfPlane;
+    const ex = e * Math.cos(thetaRad);
+    const ey = e * Math.sin(thetaRad);
     const pin = Number(selectedShackle.pin_diameter_in || pad.Dp);
     setPad((prev) => ({
       ...prev,
