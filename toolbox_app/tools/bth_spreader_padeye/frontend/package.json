@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1 --port 5173"
   },
   "dependencies": {
+    "@toolbox/ui-core": "*",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

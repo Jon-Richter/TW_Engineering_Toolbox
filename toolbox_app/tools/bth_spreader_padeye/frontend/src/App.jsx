@@ -16,6 +16,12 @@ function Field({ label, units, value, onChange, type = "number", step = "any", d
   );
 }
 
+// lightweight spinner CSS inlined to avoid modifying separate stylesheet
+const spinnerStyle = `
+.spinner { display: inline-block; padding: 6px 10px; background:#1f6feb; color:white; border-radius:4px; }
+.muted { color: #666; }
+`;
+
 function Select({ label, value, onChange, options }) {
   return (
     <div className="row">
@@ -47,14 +53,24 @@ function formatWll(value) {
 }
 
 export default function App() {
+  useEffect(() => {
+    // inject inline spinner styles for quick visual affordance
+    const el = document.createElement("style");
+    el.setAttribute("data-inline-spinner", "1");
+    el.textContent = spinnerStyle;
+    document.head.appendChild(el);
+    return () => {
+      document.head.removeChild(el);
+    };
+  }, []);
   const apiBase = import.meta.env.VITE_API_BASE || "";
   const [mode, setMode] = useState(getInitialMode());
   const [designCategory, setDesignCategory] = useState("C");
   const [Fy, setFy] = useState(50.0);
   const [Fu, setFu] = useState(65.0);
   const [impact, setImpact] = useState(1.0);
-  const designFactorByCategory = { A: 2.0, B: 3.0, C: 5.0 };
-  const designFactor = designFactorByCategory[designCategory] ?? 5.0;
+  const designFactorByCategory = { A: 2.0, B: 3.0, C: 6.0 };
+  const designFactor = designFactorByCategory[designCategory] ?? 6.0;
 
   const [pad, setPad] = useState({
     P: 50.0,
@@ -147,13 +163,22 @@ export default function App() {
     }));
   }, [selectedShackle, pad.theta_deg]);
 
-  async function runSolve(targetMode) {
+  async function runSolve(targetMode, providedSignal) {
     const activeMode = targetMode || mode;
     setBusyByMode((prev) => ({ ...prev, [activeMode]: true }));
     setErrorByMode((prev) => ({ ...prev, [activeMode]: null }));
     setNoteByMode((prev) => ({ ...prev, [activeMode]: null }));
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let controller;
+    let timeoutId;
+    let signal = providedSignal;
+
+    if (!providedSignal) {
+      controller = new AbortController();
+      signal = controller.signal;
+      timeoutId = setTimeout(() => controller.abort(), 30000);
+    }
+
     try {
       const base = {
         mode: activeMode,
@@ -169,22 +194,62 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-        signal: controller.signal
+        signal
       });
       const json = await response.json();
       if (!json.ok) throw new Error(json.error || "Solve failed");
       setResultsByMode((prev) => ({ ...prev, [activeMode]: json.results }));
     } catch (err) {
       const message =
-        err.name === "AbortError"
+        err && err.name === "AbortError"
           ? "Solve timed out after 30s. Check backend logs for errors."
-          : String(err.message || err);
+          : String((err && err.message) || err || "Unknown error");
       setErrorByMode((prev) => ({ ...prev, [activeMode]: message }));
     } finally {
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
       setBusyByMode((prev) => ({ ...prev, [activeMode]: false }));
     }
   }
+
+  // Auto-run when inputs change (debounced)
+  useEffect(() => {
+    const payloadKey = JSON.stringify({ mode, designCategory, Fy, Fu, impact, pad, spr, shackleId });
+    const debounceMs = 400;
+
+    function inputsAreValid(targetMode) {
+      if (typeof Fy === "undefined" || typeof Fu === "undefined") return false;
+      if (!Number.isFinite(Number(Fy)) || !Number.isFinite(Number(Fu))) return false;
+      if (!designCategory) return false;
+      if (targetMode === "padeye") {
+        const required = [pad.P, pad.h, pad.t, pad.Dp, pad.Dh, pad.Wb, pad.H];
+        for (const v of required) {
+          if (!Number.isFinite(Number(v))) return false;
+        }
+      } else {
+        if (!spr || !spr.shape) return false;
+        const required = [spr.span_L_ft, spr.Lb_ft, spr.KL_ft];
+        for (const v of required) {
+          if (!Number.isFinite(Number(v))) return false;
+        }
+      }
+      return true;
+    }
+
+    const valid = inputsAreValid(mode);
+    if (!valid) {
+      setNoteByMode((prev) => ({ ...prev, [mode]: "Waiting for valid inputs" }));
+      return;
+    }
+    // clear any prior note
+    setNoteByMode((prev) => ({ ...prev, [mode]: null }));
+
+    const id = setTimeout(() => {
+      // fire-and-forget; runSolve handles its own busy state
+      runSolve(mode);
+    }, debounceMs);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify({ mode, designCategory, Fy, Fu, impact, pad, spr, shackleId })]);
 
   async function optimizeTheta() {
     const activeMode = "padeye";
@@ -450,12 +515,14 @@ export default function App() {
                 units="kip"
                 value={pad.P}
                 onChange={(v) => setPad({ ...pad, P: Number(v) })}
+                disabled={busy}
               />
               <Field
                 label="In-plane angle theta"
                 units="deg"
                 value={pad.theta_deg}
                 onChange={(v) => setPad({ ...pad, theta_deg: Number(v) })}
+                disabled={busy}
               />
               <Field
                 label="Out-of-plane angle beta"
@@ -682,9 +749,10 @@ export default function App() {
             </div>
           )}
 
-          <button className="btn" disabled={busy} onClick={() => runSolve(mode)} type="button">
-            {busy ? "Running..." : "Run Analysis"}
-          </button>
+          {/* Run now handled by auto-run; show busy indicator instead */}
+          <div style={{ marginTop: 12 }}>
+            {busy ? <span className="spinner">Running…</span> : <span className="muted">Auto-run</span>}
+          </div>
           {error ? <div className="bad">{error}</div> : null}
           {note ? <div className="good">{note}</div> : null}
         </div>

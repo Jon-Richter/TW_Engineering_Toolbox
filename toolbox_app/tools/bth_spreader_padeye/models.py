@@ -9,7 +9,7 @@ class Common(BaseModel):
     mode: Literal["padeye","spreader"]
     units_system: UnitsSystem = "US"
     design_category: DesignCategory = "C"
-    Nd: float = Field(5.0, gt=0, description="BTH design factor Nd")
+    Nd: float = Field(6.0, gt=0, description="BTH design factor Nd")
     Fy: float = Field(50.0, gt=0, description="Yield strength [ksi]")
     Fu: float = Field(65.0, gt=0, description="Ultimate strength [ksi]")
     impact_factor: float = Field(1.0, ge=1.0)

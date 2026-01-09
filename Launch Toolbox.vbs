@@ -17,14 +17,12 @@ Sub Log(msg)
 End Sub
 Log "Launch request."
 Dim commands()
-ReDim commands(6)
+ReDim commands(4)
 commands(0) = Chr(34) & scriptDir & "\.venv\Scripts\pythonw.exe" & Chr(34) & " -m toolbox_app"
 commands(1) = Chr(34) & scriptDir & "\.venv\Scripts\python.exe" & Chr(34) & " -m toolbox_app"
 commands(2) = "pyw -3.13 -m toolbox_app"
-commands(3) = "pyw -m toolbox_app"
-commands(4) = "pythonw -m toolbox_app"
-commands(5) = "python -m toolbox_app"
-commands(6) = "cmd /c " & Chr(34) & scriptDir & "\scripts\launch_toolbox.bat" & Chr(34)
+commands(3) = "pythonw -m toolbox_app"
+commands(4) = "python -m toolbox_app"
 launched = False
 For i = 0 To UBound(commands)
   cmd = commands(i)
@@ -32,13 +30,12 @@ For i = 0 To UBound(commands)
   On Error Resume Next
   wnd = 0
   If LCase(Left(Trim(cmd),4)) = "cmd " Then wnd = 1
-  ret = WshShell.Run(cmd, wnd, True)
+  ' For GUI apps, use False (don't wait) so the script doesn't hang
+  ret = WshShell.Run(cmd, wnd, False)
   errnum = Err.Number
   If errnum <> 0 Then
     Log "Launch failed: " & Err.Description
     Err.Clear
-  ElseIf ret <> 0 Then
-    Log "Launch failed: return code " & ret
   Else
     Log "Launch succeeded."
     launched = True

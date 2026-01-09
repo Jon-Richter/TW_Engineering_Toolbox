@@ -2,3 +2,47 @@
 # Build artifacts
 dist/
 build/
+node_modules/
+logs/
+__pycache__/
+*.log
+*.tmp
+*.pyc
+
+# Environment files
+.env
+.env.local
+.env.*.local
+# IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+# OS files
+.DS_Store
+Thumbs.db
+# Dependency directories
+vendor/
+# Compiled files
+*.class
+*.o
+*.so
+*.dll
+# Package files
+*.zip
+*.tar.gz
+*.rar
+# Miscellaneous
+*.bak
+*.swp
+*.old
+*.orig
+*.rej
+# Coverage reports
+coverage/
+coverage-final.json
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/

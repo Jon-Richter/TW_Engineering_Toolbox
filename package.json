@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "workspaces": [
+    "toolbox_app/ui-core",
+    "toolbox_app/tools/bth_spreader_padeye/frontend",
+    "toolbox_app/tools/tower_crane_foundation/frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "build:core": "npm run build --workspace=toolbox_app/ui-core",
+    "build:tools": "npm run build --workspaces -- --workspace='!toolbox_app/ui-core'"
+  }
+}

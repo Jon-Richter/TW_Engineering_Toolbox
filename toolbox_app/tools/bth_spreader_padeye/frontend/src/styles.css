@@ -28,12 +28,16 @@ body {
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
   color: var(--text);
   min-height: 100vh;
+  background-attachment: fixed;
 }
 
 body::before {
   content: "";
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: radial-gradient(700px at 20% 25%, rgba(255, 255, 255, 0.06), transparent 65%);
   pointer-events: none;
   z-index: 0;
@@ -42,13 +46,17 @@ body::before {
 body::after {
   content: "";
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 80px 80px;
   opacity: 0.35;
   pointer-events: none;
   z-index: 0;
+  will-change: auto;
 }
 
 .container {
@@ -200,6 +208,23 @@ h1 {
   outline: none;
   border-color: rgba(56, 189, 248, 0.7);
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
+/* Select options - prevent persistent hover highlight */
+.row select option {
+  background: rgba(11, 18, 32, 0.95);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.row select option:hover {
+  background: rgba(56, 189, 248, 0.3);
+  color: var(--text);
+}
+
+.row select option:checked {
+  background: rgba(56, 189, 248, 0.6);
+  color: var(--text);
 }
 
 .row input:disabled {
