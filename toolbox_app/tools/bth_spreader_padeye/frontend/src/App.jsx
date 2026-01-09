@@ -286,10 +286,7 @@ export default function App() {
     if (!selectedShackle) return;
     const e = Number(selectedShackle.eccentricity_in || 0);
     const theta = Number(pad.theta_deg || 0);
-    const beta = Number(pad.beta_deg || 0);
     const thetaRad = (theta * Math.PI) / 180.0;
-    const betaRad = (beta * Math.PI) / 180.0;
-    const outOfPlane = Math.sin(betaRad);
     const ex = e * Math.cos(thetaRad);
     const ey = e * Math.sin(thetaRad);
     const pin = Number(selectedShackle.pin_diameter_in || pad.Dp);
@@ -299,7 +296,7 @@ export default function App() {
       ey: Number(ey.toFixed(6)),
       Dp: pin
     }));
-  }, [selectedShackle, pad.theta_deg, pad.beta_deg]);
+  }, [selectedShackle, pad.theta_deg]);
 
   async function runSolve(targetMode, providedSignal) {
     const activeMode = targetMode || mode;

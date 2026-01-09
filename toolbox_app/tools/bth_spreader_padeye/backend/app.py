@@ -24,6 +24,7 @@ VALID_MODES = ("padeye","spreader")
 LAST_MODE: str | None = None
 
 SHAPES = load_shapes(TOOL_DIR)
+SHACKLES_CACHE: list[Dict[str, Any]] | None = None
 
 def _load_shackle_db(tool_dir: Path) -> list[Dict[str, Any]]:
     xlsx_path = tool_dir / "assets" / "BTH-1-2023-Padeye and Spreader Bar Design Sheet.xlsx"
@@ -123,7 +124,12 @@ def _load_shackle_db(tool_dir: Path) -> list[Dict[str, Any]]:
     items.sort(key=lambda x: (x["type"], x["wll_t"]))
     return items
 
-SHACKLES = _load_shackle_db(TOOL_DIR)
+def _get_shackles():
+    global SHACKLES_CACHE
+    if SHACKLES_CACHE is None:
+        SHACKLES_CACHE = _load_shackle_db(TOOL_DIR)
+    return SHACKLES_CACHE
+
 
 def _units_map(k: str) -> str:
     m = {
@@ -1597,7 +1603,7 @@ class Handler(SimpleHTTPRequestHandler):
             if u.path == "/api/health":
                 return self._send_json({"ok": True, "tool": TOOL_ID, "version": TOOL_VERSION})
             if u.path == "/api/shackles":
-                return self._send_json({"ok": True, "items": SHACKLES})
+                return self._send_json({"ok": True, "items": _get_shackles()})
             if u.path == "/api/report.html":
                 qs = parse_qs(u.query or "")
                 mode = _mode_from_query(qs) or LAST_MODE
