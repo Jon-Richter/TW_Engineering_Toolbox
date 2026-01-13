@@ -4,7 +4,7 @@ import math
 from typing import List, Dict
 
 from .models import InputModel, Material
-from .shapes_db import Shape
+from toolbox_app.blocks.aisc_shapes_db import Shape
 from .design_common import (
     factors_tension_yield,
     factors_tension_rupture,

@@ -5,7 +5,7 @@ from typing import Dict, List
 import math
 from .models import InputModel
 from .design_common import safe_div
-from .shapes_db import Shape
+from toolbox_app.blocks.aisc_shapes_db import Shape
 
 
 def _principal_moments(shape: Shape, Mx: float, My: float, warnings: List[str]) -> tuple[float, float, float]:

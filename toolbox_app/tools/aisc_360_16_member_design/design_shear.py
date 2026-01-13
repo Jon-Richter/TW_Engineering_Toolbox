@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from .models import InputModel, Material
-from .shapes_db import Shape
+from toolbox_app.blocks.aisc_shapes_db import Shape
 from .design_common import factors_shear, design_strength, safe_div
 
 
