@@ -68,7 +68,7 @@ class _Tool:
         description="Design steel spreader bars and padeyes per ASME BTH-1-2023 with audit-grade calc package.",
     )
     class InputModel(BaseModel):
-        mode: Literal["padeye", "spreader"] = Field(
+        mode: Literal["padeye", "spreader", "spreader_two_way"] = Field(
             "padeye",
             title="Mode",
             description="Select the module to open in the full UI.",
@@ -231,7 +231,7 @@ class _Tool:
         run_dir=str(create_run_dir(TOOL_ID, inputs))
         self._last_run_dir = run_dir
         mode = str(inputs.get("mode") or "padeye")
-        if mode not in ("padeye", "spreader"):
+        if mode not in ("padeye", "spreader", "spreader_two_way"):
             mode = "padeye"
         port = _find_free_port()
         base = f"http://127.0.0.1:{port}"

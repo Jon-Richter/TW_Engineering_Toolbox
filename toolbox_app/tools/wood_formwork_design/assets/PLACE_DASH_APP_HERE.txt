@@ -1,2 +1,0 @@
-Place your Dash app entry script here (e.g., formwork_design.py).
-This wrapper will look for the entry file configured in tool_config.json.

@@ -2,7 +2,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any
 import json, csv
-from openpyxl import Workbook
 from .report_renderer import render_report_html
 
 def export_all(run_dir: Path, trace: Dict[str, Any], results: Dict[str, Any]) -> Dict[str, str]:
@@ -11,6 +10,8 @@ def export_all(run_dir: Path, trace: Dict[str, Any], results: Dict[str, Any]) ->
     (run_dir/"calc_trace.json").write_text(json.dumps(trace, indent=2), encoding="utf-8")
     (run_dir/"results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     (run_dir/"report.html").write_text(render_report_html(trace), encoding="utf-8")
+
+    from openpyxl import Workbook
 
     wb=Workbook()
     ws=wb.active; ws.title="Inputs"

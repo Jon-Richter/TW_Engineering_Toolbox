@@ -22,11 +22,11 @@ const spinnerStyle = `
 .muted { color: #666; }
 `;
 
-function Select({ label, value, onChange, options }) {
+function Select({ label, value, onChange, options, disabled = false }) {
   return (
     <div className="row">
       <div>{label}</div>
-      <select value={value} onChange={(ev) => onChange(ev.target.value)}>
+      <select value={value} onChange={(ev) => onChange(ev.target.value)} disabled={disabled}>
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
@@ -42,6 +42,7 @@ function getInitialMode() {
   if (typeof window === "undefined") return "padeye";
   const params = new URLSearchParams(window.location.search);
   const raw = (params.get("mode") || "").toLowerCase();
+  if (raw === "spreader_two_way") return "spreader_two_way";
   return raw === "spreader" ? "spreader" : "padeye";
 }
 
@@ -59,7 +60,50 @@ function formatDim(value) {
   return fixed.replace(/\.?0+$/, "");
 }
 
-function PadeyeDiagram({ H, h, w, Wb, t, Dh, R }) {
+function getOutputNumber(value, fallback = NaN) {
+  if (value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, "value")) {
+    const n = Number(value.value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeBeamDiagrams(beamSolver) {
+  if (!beamSolver) return null;
+  const diag = beamSolver.diagrams || {};
+  if (Array.isArray(diag.x_ft) && (Array.isArray(diag.moment_kipft) || Array.isArray(diag.shear_kip))) {
+    return {
+      x_ft: diag.x_ft,
+      moment_kipft: Array.isArray(diag.moment_kipft) ? diag.moment_kipft : [],
+      shear_kip: Array.isArray(diag.shear_kip) ? diag.shear_kip : []
+    };
+  }
+  if (Array.isArray(diag.x_user) && (Array.isArray(diag.moment_user) || Array.isArray(diag.shear_user))) {
+    return {
+      x_ft: diag.x_user,
+      moment_kipft: Array.isArray(diag.moment_user) ? diag.moment_user.map((v) => v / 1000.0) : [],
+      shear_kip: Array.isArray(diag.shear_user) ? diag.shear_user.map((v) => v / 1000.0) : []
+    };
+  }
+  if (Array.isArray(beamSolver.x_ft) && (Array.isArray(beamSolver.moment_kipft) || Array.isArray(beamSolver.shear_kip))) {
+    return {
+      x_ft: beamSolver.x_ft,
+      moment_kipft: Array.isArray(beamSolver.moment_kipft) ? beamSolver.moment_kipft : [],
+      shear_kip: Array.isArray(beamSolver.shear_kip) ? beamSolver.shear_kip : []
+    };
+  }
+  if (Array.isArray(beamSolver.x_user) && (Array.isArray(beamSolver.moment_user) || Array.isArray(beamSolver.shear_user))) {
+    return {
+      x_ft: beamSolver.x_user,
+      moment_kipft: Array.isArray(beamSolver.moment_user) ? beamSolver.moment_user.map((v) => v / 1000.0) : [],
+      shear_kip: Array.isArray(beamSolver.shear_user) ? beamSolver.shear_user.map((v) => v / 1000.0) : []
+    };
+  }
+  return null;
+}
+
+function PadeyeDiagram({ H, h, a1, Wb, Wb1, t, Dh, R }) {
   const svgW = 640;
   const svgH = 420;
   const pad = 60;
@@ -71,42 +115,144 @@ function PadeyeDiagram({ H, h, w, Wb, t, Dh, R }) {
 
   const WbVal = safe(Wb, 1);
   const HVal = safe(H, 1);
-  const wVal = safe(w, WbVal * 0.6);
   const hVal = Math.min(safe(h, HVal * 0.7), HVal);
+  const a1Raw = Number(a1);
+  const a1Val = Number.isFinite(a1Raw) ? Math.min(Math.max(a1Raw, 0), HVal) : 0;
+  const Wb1Val = safe(Wb1, WbVal / 2);
+  const RVal = Math.max(Number(R) || 0, 0);
+  const yCenter = HVal - RVal;
+
+  const eZ = WbVal / 2 - Wb1Val;
+  const baseLeftX = -WbVal / 2;
+  const baseRightX = WbVal / 2;
+
+  const tangentPoint = (xEdge) => {
+    if (RVal <= 0) return null;
+    const dx = xEdge - eZ;
+    const dy = a1Val - yCenter;
+    const d2 = dx * dx + dy * dy;
+    const r2 = RVal * RVal;
+    if (d2 <= r2) return null;
+    const sqrtTerm = Math.sqrt(Math.max(d2 - r2, 0));
+    const coeff1 = r2 / d2;
+    const coeff2 = (RVal * sqrtTerm) / d2;
+    const px = -dy;
+    const py = dx;
+    const t1 = { x: eZ + coeff1 * dx + coeff2 * px, y: yCenter + coeff1 * dy + coeff2 * py };
+    const t2 = { x: eZ + coeff1 * dx - coeff2 * px, y: yCenter + coeff1 * dy - coeff2 * py };
+    const candidates = [t1, t2];
+    const valid = candidates.filter((c) => c.y >= a1Val - 1e-6);
+    return (valid.length ? valid : candidates).reduce((best, cur) => (cur.y > best.y ? cur : best));
+  };
+
+  const edgeXAtHole = (xEdge, tangent, sideSign) => {
+    if (hVal <= a1Val + 1e-6 || RVal <= 0) return xEdge;
+    if (tangent) {
+      if (hVal <= tangent.y + 1e-6 && Math.abs(tangent.y - a1Val) > 1e-6) {
+        const t = (hVal - a1Val) / (tangent.y - a1Val);
+        return xEdge + t * (tangent.x - xEdge);
+      }
+    }
+    const dy = hVal - yCenter;
+    if (Math.abs(dy) <= RVal) {
+      const dx = Math.sqrt(Math.max(RVal * RVal - dy * dy, 0));
+      return eZ + sideSign * dx;
+    }
+    return xEdge;
+  };
+
+  const leftT = tangentPoint(baseLeftX);
+  const rightT = tangentPoint(baseRightX);
+  const leftX = edgeXAtHole(baseLeftX, leftT, -1);
+  const rightX = edgeXAtHole(baseRightX, rightT, 1);
+  const wVal = rightX > leftX ? rightX - leftX : WbVal;
   const DhVal = Math.min(safe(Dh, Math.max(wVal * 0.35, 0.1)), wVal * 0.9);
-  const RVal = safe(R, Math.max(HVal - hVal, HVal * 0.25));
 
-  const scale = Math.min((svgW - 2 * pad) / WbVal, (svgH - 2 * pad) / HVal);
-  const baseX = (svgW - WbVal * scale) / 2;
+  const maxY = HVal;
+  const minX = Math.min(baseLeftX, leftX, eZ - RVal);
+  const maxX = Math.max(baseRightX, rightX, eZ + RVal);
+  const spanX = Math.max(maxX - minX, WbVal);
+
+  const scale = Math.min((svgW - 2 * pad) / spanX, (svgH - 2 * pad) / maxY);
+  const baseX = pad - minX * scale;
   const baseY = svgH - pad;
-  const topY = baseY - HVal * scale;
-  const centerX = baseX + (WbVal * scale) / 2;
-  const holeY = baseY - hVal * scale;
-  const halfW = (wVal * scale) / 2;
+  const toX = (x) => baseX + x * scale;
+  const toY = (y) => baseY - y * scale;
+
+  const leftBase = { x: toX(baseLeftX), y: toY(0) };
+  const rightBase = { x: toX(baseRightX), y: toY(0) };
+  const leftA1 = { x: toX(baseLeftX), y: toY(a1Val) };
+  const rightA1 = { x: toX(baseRightX), y: toY(a1Val) };
+  const centerlineX = toX(0);
+  const holeX = toX(eZ);
+  const holeY = toY(hVal);
   const holeR = (DhVal * scale) / 2;
+  const topY = toY(HVal);
 
-  const leftBase = { x: baseX, y: baseY };
-  const rightBase = { x: baseX + WbVal * scale, y: baseY };
-  const leftShoulder = { x: centerX - halfW, y: holeY };
-  const rightShoulder = { x: centerX + halfW, y: holeY };
+  const leftHole = { x: toX(leftX), y: holeY };
+  const rightHole = { x: toX(rightX), y: holeY };
 
-  const arcCtrlOffset = Math.max(halfW * 0.55, 12);
-  const path = [
-    `M ${leftBase.x} ${leftBase.y}`,
-    `L ${rightBase.x} ${rightBase.y}`,
-    `L ${rightShoulder.x} ${rightShoulder.y}`,
-    `Q ${centerX + arcCtrlOffset} ${topY} ${centerX} ${topY}`,
-    `Q ${centerX - arcCtrlOffset} ${topY} ${leftShoulder.x} ${leftShoulder.y}`,
-    `L ${leftBase.x} ${leftBase.y}`,
-    "Z"
-  ].join(" ");
+  const outline = [];
+  outline.push(`M ${leftBase.x} ${leftBase.y}`);
+  outline.push(`L ${rightBase.x} ${rightBase.y}`);
+  outline.push(`L ${rightA1.x} ${rightA1.y}`);
 
-  const leftDimX = baseX - 26;
-  const leftDimX2 = baseX - 12;
+  if (RVal > 0 && leftT && rightT) {
+    const rightTsvg = { x: toX(rightT.x), y: toY(rightT.y) };
+    const leftTsvg = { x: toX(leftT.x), y: toY(leftT.y) };
+    outline.push(`L ${rightTsvg.x} ${rightTsvg.y}`);
+
+    const TAU = Math.PI * 2;
+    const norm = (ang) => {
+      let a = ang % TAU;
+      if (a < 0) a += TAU;
+      return a;
+    };
+    const start = norm(Math.atan2(rightT.y - yCenter, rightT.x - eZ));
+    const end = norm(Math.atan2(leftT.y - yCenter, leftT.x - eZ));
+    const target = norm(Math.PI / 2);
+    const ccwContains =
+      start <= end ? target >= start && target <= end : target >= start || target <= end;
+    const steps = 20;
+    if (ccwContains) {
+      const sweep = start <= end ? end - start : TAU - start + end;
+      for (let i = 1; i <= steps; i += 1) {
+        const ang = start + (sweep * i) / steps;
+        const x = eZ + RVal * Math.cos(ang);
+        const y = yCenter + RVal * Math.sin(ang);
+        outline.push(`L ${toX(x)} ${toY(y)}`);
+      }
+    } else {
+      const sweep = start >= end ? start - end : start + (TAU - end);
+      for (let i = 1; i <= steps; i += 1) {
+        const ang = start - (sweep * i) / steps;
+        const x = eZ + RVal * Math.cos(ang);
+        const y = yCenter + RVal * Math.sin(ang);
+        outline.push(`L ${toX(x)} ${toY(y)}`);
+      }
+    }
+
+    outline.push(`L ${leftTsvg.x} ${leftTsvg.y}`);
+  } else {
+    const topRight = { x: toX(baseRightX), y: toY(HVal) };
+    const topLeft = { x: toX(baseLeftX), y: toY(HVal) };
+    outline.push(`L ${topRight.x} ${topRight.y}`);
+    outline.push(`L ${topLeft.x} ${topLeft.y}`);
+  }
+
+  outline.push(`L ${leftA1.x} ${leftA1.y}`);
+  outline.push(`L ${leftBase.x} ${leftBase.y}`);
+  outline.push("Z");
+
+  const leftDimX = leftBase.x - 26;
+  const leftDimX2 = leftBase.x - 12;
+  const a1DimX = leftBase.x - 40;
   const wDimY = holeY - 26;
   const WbDimY = baseY + 28;
   const DhDimY = holeY + holeR + 22;
-  const rDimX = rightShoulder.x + 26;
+  const rDimX = Math.max(rightHole.x, rightBase.x) + 26;
+  const rTopY = topY;
+  const rCenterY = toY(yCenter);
   const tLabelX = rightBase.x + 18;
   const tLabelY = baseY - (HVal * scale) * 0.45;
 
@@ -126,25 +272,25 @@ function PadeyeDiagram({ H, h, w, Wb, t, Dh, R }) {
       </defs>
       <rect x="0" y="0" width={svgW} height={svgH} fill="none" />
       <line
-        x1={centerX}
+        x1={centerlineX}
         y1={topY - 18}
-        x2={centerX}
+        x2={centerlineX}
         y2={baseY + 18}
         stroke="#94a3b8"
         strokeDasharray="6 6"
         strokeWidth="1"
       />
       <line
-        x1={baseX - 10}
+        x1={leftBase.x - 10}
         y1={holeY}
-        x2={baseX + WbVal * scale + 10}
+        x2={rightBase.x + 10}
         y2={holeY}
         stroke="#94a3b8"
         strokeDasharray="6 6"
         strokeWidth="1"
       />
-      <path d={path} fill="none" stroke="#e2e8f0" strokeWidth="2" />
-      <circle cx={centerX} cy={holeY} r={holeR} fill="none" stroke="#e2e8f0" strokeWidth="2" />
+      <path d={outline.join(" ")} fill="none" stroke="#e2e8f0" strokeWidth="2" />
+      <circle cx={holeX} cy={holeY} r={holeR} fill="none" stroke="#e2e8f0" strokeWidth="2" />
 
       <line x1={leftDimX} y1={baseY} x2={leftDimX} y2={topY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
       <text x={leftDimX - 6} y={(baseY + topY) / 2} textAnchor="end">
@@ -156,31 +302,269 @@ function PadeyeDiagram({ H, h, w, Wb, t, Dh, R }) {
         {`h ${formatDim(hVal)} in`}
       </text>
 
-      <line x1={baseX} y1={WbDimY} x2={rightBase.x} y2={WbDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
-      <text x={centerX} y={WbDimY + 16} textAnchor="middle">
+      {a1Val > 0 ? (
+        <g>
+          <line x1={a1DimX} y1={baseY} x2={a1DimX} y2={leftA1.y} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+          <text x={a1DimX - 6} y={(baseY + leftA1.y) / 2} textAnchor="end">
+            {`a1 ${formatDim(a1Val)} in`}
+          </text>
+        </g>
+      ) : null}
+
+      <line x1={leftBase.x} y1={WbDimY} x2={rightBase.x} y2={WbDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={(leftBase.x + rightBase.x) / 2} y={WbDimY + 16} textAnchor="middle">
         {`Wb ${formatDim(WbVal)} in`}
       </text>
 
-      <line x1={centerX - halfW} y1={wDimY} x2={centerX + halfW} y2={wDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
-      <text x={centerX} y={wDimY - 8} textAnchor="middle">
+      <line x1={leftHole.x} y1={wDimY} x2={rightHole.x} y2={wDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={(leftHole.x + rightHole.x) / 2} y={wDimY - 8} textAnchor="middle">
         {`w ${formatDim(wVal)} in`}
       </text>
 
-      <line x1={centerX - holeR} y1={DhDimY} x2={centerX + holeR} y2={DhDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
-      <text x={centerX} y={DhDimY + 16} textAnchor="middle">
+      <line x1={holeX - holeR} y1={DhDimY} x2={holeX + holeR} y2={DhDimY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+      <text x={holeX} y={DhDimY + 16} textAnchor="middle">
         {`Dh ${formatDim(DhVal)} in`}
       </text>
 
-      <line x1={rDimX} y1={holeY} x2={rDimX} y2={topY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
-      <text x={rDimX + 6} y={(holeY + topY) / 2} textAnchor="start">
-        {`R ${formatDim(RVal)} in`}
-      </text>
+      {RVal > 0 ? (
+        <g>
+          <line x1={rDimX} y1={rTopY} x2={rDimX} y2={rCenterY} stroke="#e2e8f0" strokeWidth="1.2" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+          <text x={rDimX + 6} y={(rTopY + rCenterY) / 2} textAnchor="start">
+            {`R ${formatDim(RVal)} in`}
+          </text>
+        </g>
+      ) : null}
 
       <line x1={rightBase.x + 4} y1={tLabelY} x2={rightBase.x + 22} y2={tLabelY - 8} stroke="#e2e8f0" strokeWidth="1.2" markerEnd="url(#arrow)" />
       <text x={tLabelX + 6} y={tLabelY - 12} textAnchor="start">
         {`t ${formatDim(t)} in`}
       </text>
     </svg>
+  );
+}
+
+function SpreaderTwoWayDiagram({
+  lengthFt,
+  padeyeEdgeFt,
+  padeyeHeightIn,
+  pointLoads,
+  shapeLabel,
+  shapeDepthIn,
+  selfWeightKipFt,
+  slingAngleMinDeg,
+  outputs
+}) {
+  const svgW = 860;
+  const svgH = 520;
+  const pad = 60;
+
+  const L = Number(lengthFt) || 0;
+  const edge = Number(padeyeEdgeFt) || 0;
+  const padeyeHeightFt = (Number(padeyeHeightIn) || 0) / 12.0;
+  const xLeft = edge;
+  const xRight = Math.max(L - edge, edge);
+  const cgX = getOutputNumber(outputs && outputs.cg_x);
+  const totalLoadOut = getOutputNumber(outputs && outputs.total_load);
+  const angleLeftOut = getOutputNumber(outputs && outputs.sling_angle_left);
+  const angleRightOut = getOutputNumber(outputs && outputs.sling_angle_right);
+  const lenLeftOut = getOutputNumber(outputs && outputs.sling_length_left);
+  const lenRightOut = getOutputNumber(outputs && outputs.sling_length_right);
+
+  const loads = Array.isArray(pointLoads) ? pointLoads : [];
+  const loadSum = loads.reduce((sum, load) => sum + (Number(load.P_kip) || 0), 0);
+  const loadMoment = loads.reduce((sum, load) => sum + (Number(load.P_kip) || 0) * (Number(load.x_ft) || 0), 0);
+  const selfWeight = Number(selfWeightKipFt) || 0;
+  const totalLoadCalc = loadSum + selfWeight * L;
+  const cgCalc = totalLoadCalc > 0 ? (loadMoment + selfWeight * L * (L / 2.0)) / totalLoadCalc : NaN;
+
+  const cgVal = Number.isFinite(cgX) ? cgX : Number.isFinite(cgCalc) ? cgCalc : L / 2.0;
+  const dLeft = Math.abs(cgVal - xLeft);
+  const dRight = Math.abs(xRight - cgVal);
+  const dLong = Math.max(dLeft, dRight);
+  const slingAngleDegNum = Number(slingAngleMinDeg);
+  const slingAngleRad = Number.isFinite(slingAngleDegNum) ? (slingAngleDegNum * Math.PI) / 180 : 0;
+  const hookHeight = dLong > 0 ? dLong * Math.tan(slingAngleRad) : 0.0;
+  const angleLeftCalc = hookHeight > 0 || dLeft > 0 ? (Math.atan2(hookHeight, dLeft || 1e-9) * 180) / Math.PI : 90.0;
+  const angleRightCalc = hookHeight > 0 || dRight > 0 ? (Math.atan2(hookHeight, dRight || 1e-9) * 180) / Math.PI : 90.0;
+  const lenLeftCalc = Math.hypot(hookHeight, dLeft);
+  const lenRightCalc = Math.hypot(hookHeight, dRight);
+
+  const angleLeft = Number.isFinite(angleLeftOut) ? angleLeftOut : angleLeftCalc;
+  const angleRight = Number.isFinite(angleRightOut) ? angleRightOut : angleRightCalc;
+  const lenLeft = Number.isFinite(lenLeftOut) ? lenLeftOut : lenLeftCalc;
+  const lenRight = Number.isFinite(lenRightOut) ? lenRightOut : lenRightCalc;
+  const hookY = padeyeHeightFt + (Number.isFinite(hookHeight) ? hookHeight : 0);
+
+  const minY = -1.4;
+  const maxY = Math.max(hookY + 1.2, padeyeHeightFt + 2.2);
+  const spanX = Math.max(L, 1);
+  const spanY = Math.max(maxY - minY, 1);
+  const scale = Math.min((svgW - 2 * pad) / spanX, (svgH - 2 * pad) / spanY);
+
+  const toX = (x) => pad + x * scale;
+  const toY = (y) => svgH - pad - (y - minY) * scale;
+
+  const beamY = 0;
+  const loadStartY = Math.max(padeyeHeightFt + 1.0, padeyeHeightFt + hookHeight * 0.35);
+  const cgArrowStartY = loadStartY + 0.6;
+
+  const totalLoadLabel = Number.isFinite(totalLoadOut)
+    ? formatDim(totalLoadOut)
+    : Number.isFinite(totalLoadCalc)
+    ? formatDim(totalLoadCalc)
+    : "-";
+  const markerId = "tw-arrow";
+  const dashedId = "tw-dash";
+
+  return (
+    <svg className="padeye-diagram" viewBox={`0 0 ${svgW} ${svgH}`} role="img">
+      <defs>
+        <marker
+          id={markerId}
+          markerWidth="8"
+          markerHeight="8"
+          refX="4"
+          refY="4"
+          orient="auto"
+        >
+          <path d="M0,0 L8,4 L0,8 Z" fill="#e2e8f0" />
+        </marker>
+        <pattern id={dashedId} width="6" height="6" patternUnits="userSpaceOnUse">
+          <path d="M0 0 L6 0" stroke="#94a3b8" strokeWidth="2" strokeDasharray="6 6" />
+        </pattern>
+      </defs>
+
+      {/* beam */}
+      <line x1={toX(0)} y1={toY(beamY)} x2={toX(L)} y2={toY(beamY)} stroke="#e2e8f0" strokeWidth="4" />
+      {/* padeye holes */}
+      <circle cx={toX(xLeft)} cy={toY(padeyeHeightFt)} r="5" fill="#e2e8f0" />
+      <circle cx={toX(xRight)} cy={toY(padeyeHeightFt)} r="5" fill="#e2e8f0" />
+
+      {/* length dimension */}
+      <line
+        x1={toX(0)}
+        y1={toY(minY + 0.3)}
+        x2={toX(L)}
+        y2={toY(minY + 0.3)}
+        stroke="#e2e8f0"
+        strokeWidth="1.2"
+        markerStart={`url(#${markerId})`}
+        markerEnd={`url(#${markerId})`}
+      />
+      <text x={toX(L / 2)} y={toY(minY + 0.1)} textAnchor="middle">
+        {`L ${formatDim(L)} ft`}
+      </text>
+
+      {/* member size */}
+      <text x={toX(0)} y={toY(beamY + 0.35)} textAnchor="start">
+        {shapeDepthIn
+          ? `${shapeLabel} (d ${formatDim(shapeDepthIn)} in)`
+          : `${shapeLabel}`}
+      </text>
+
+      {/* sling geometry */}
+      <circle cx={toX(cgVal)} cy={toY(hookY)} r="5" fill="#f59e0b" />
+      <line x1={toX(xLeft)} y1={toY(padeyeHeightFt)} x2={toX(cgVal)} y2={toY(hookY)} stroke="#f59e0b" strokeWidth="2" />
+      <line x1={toX(xRight)} y1={toY(padeyeHeightFt)} x2={toX(cgVal)} y2={toY(hookY)} stroke="#f59e0b" strokeWidth="2" />
+
+      <text x={toX((xLeft + cgVal) / 2)} y={toY((padeyeHeightFt + hookY) / 2 + 0.2)} textAnchor="start">
+        {Number.isFinite(angleLeft) ? `${formatDim(angleLeft)}°` : ""}
+      </text>
+      <text x={toX((xLeft + cgVal) / 2)} y={toY((padeyeHeightFt + hookY) / 2 - 0.05)} textAnchor="start">
+        {Number.isFinite(lenLeft) ? `${formatDim(lenLeft)} ft` : ""}
+      </text>
+      <text x={toX((xRight + cgVal) / 2)} y={toY((padeyeHeightFt + hookY) / 2 + 0.2)} textAnchor="end">
+        {Number.isFinite(angleRight) ? `${formatDim(angleRight)}°` : ""}
+      </text>
+      <text x={toX((xRight + cgVal) / 2)} y={toY((padeyeHeightFt + hookY) / 2 - 0.05)} textAnchor="end">
+        {Number.isFinite(lenRight) ? `${formatDim(lenRight)} ft` : ""}
+      </text>
+
+      {/* point loads */}
+      {loads.map((load, idx) => {
+        const x = Number(load.x_ft) || 0;
+        const P = Number(load.P_kip) || 0;
+        const labelY = loadStartY + 0.4 + (idx % 2) * 0.5;
+        return (
+          <g key={`load-${idx}`}>
+            <line
+              x1={toX(x)}
+              y1={toY(loadStartY)}
+              x2={toX(x)}
+              y2={toY(beamY)}
+              stroke="#e2e8f0"
+              strokeWidth="1.6"
+              markerEnd={`url(#${markerId})`}
+            />
+            <text x={toX(x)} y={toY(labelY)} textAnchor="middle">
+              {`P ${formatDim(P)} kip @ ${formatDim(x)} ft`}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* centroid arrow */}
+      <line
+        x1={toX(cgVal)}
+        y1={toY(cgArrowStartY)}
+        x2={toX(cgVal)}
+        y2={toY(beamY)}
+        stroke="#94a3b8"
+        strokeWidth="1.6"
+        strokeDasharray="6 6"
+        markerEnd={`url(#${markerId})`}
+      />
+      <text x={toX(cgVal)} y={toY(cgArrowStartY + 0.35)} textAnchor="middle">
+        {`CG ${formatDim(cgVal)} ft, W ${totalLoadLabel} kip`}
+      </text>
+    </svg>
+  );
+}
+
+function LineDiagram({ title, xVals, yVals, units, color = "#38bdf8" }) {
+  const svgW = 860;
+  const svgH = 140;
+  const pad = 50;
+  const xsRaw = Array.isArray(xVals) ? xVals : [];
+  const ysRaw = Array.isArray(yVals) ? yVals : [];
+  const pairs = xsRaw
+    .map((x, i) => [Number(x), Number(ysRaw[i])])
+    .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+  if (!pairs.length) {
+    return (
+      <div style={{ padding: "10px 16px" }}>
+        <div className="section-title">{title}</div>
+        <div className="sub">No diagram data available.</div>
+      </div>
+    );
+  }
+
+  const xs = pairs.map((pair) => pair[0]);
+  const ys = pairs.map((pair) => pair[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const spanX = maxX - minX || 1;
+  const spanY = maxY - minY || 1;
+
+  const toX = (x) => pad + ((x - minX) / spanX) * (svgW - 2 * pad);
+  const toY = (y) => svgH - pad - ((y - minY) / spanY) * (svgH - 2 * pad);
+
+  const points = xs.map((x, i) => `${toX(x)},${toY(ys[i])}`).join(" ");
+  const zeroY = minY <= 0 && maxY >= 0 ? toY(0) : null;
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div className="section-title">{title}</div>
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} role="img">
+        {zeroY !== null ? (
+          <line x1={pad} y1={zeroY} x2={svgW - pad} y2={zeroY} stroke="#94a3b8" strokeDasharray="5 6" />
+        ) : null}
+        <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
+        <text x={svgW - pad} y={pad - 8} textAnchor="end">{units}</text>
+      </svg>
+    </div>
   );
 }
 
@@ -210,25 +594,34 @@ export default function App() {
     beta_deg: 90.0,
     H: 40.0,
     h: 38.0,
-    w: 5.0,
+    a1: 0.0,
     Wb: 8.0,
+    Wb1: 4.0,
     t: 1.0,
     Dh: 1.4,
     Dp: 1.5,
     R: 2.0,
     tcheek: 0.0,
     ex: 0.0,
-    ey: 0.0
+    ey: 0.0,
+    weld_type: "Fillet",
+    weld_group: "Long Sides Only",
+    weld_size_16: 4,
+    weld_exx_ksi: 70.0
   });
 
   const [shackles, setShackles] = useState([]);
   const [shackleId, setShackleId] = useState("custom");
+  const [spreaderShapes, setSpreaderShapes] = useState([]);
+  const [spreaderShapeLoading, setSpreaderShapeLoading] = useState(false);
 
   const [spr, setSpr] = useState({
     shape: "W10X49",
     span_L_ft: 20.0,
     Lb_ft: 20.0,
     KL_ft: 20.0,
+    ey: 0.0,
+    mx_includes_total: false,
     Cb: 1.0,
     V_kip: 0.0,
     P_kip: 0.0,
@@ -244,12 +637,21 @@ export default function App() {
     weld_exx_ksi: 70.0
   });
 
-  const [busyByMode, setBusyByMode] = useState({ padeye: false, spreader: false });
-  const [resultsByMode, setResultsByMode] = useState({ padeye: null, spreader: null });
-  const [errorByMode, setErrorByMode] = useState({ padeye: null, spreader: null });
-  const [noteByMode, setNoteByMode] = useState({ padeye: null, spreader: null });
-  const [reportVisibleByMode, setReportVisibleByMode] = useState({ padeye: false, spreader: false });
-  const [reportTokenByMode, setReportTokenByMode] = useState({ padeye: 0, spreader: 0 });
+  const [twoWay, setTwoWay] = useState({
+    shape: "W10X49",
+    length_ft: 20.0,
+    padeye_edge_ft: 2.0,
+    padeye_height_in: 6.0,
+    sling_angle_deg: 45.0,
+    point_loads: [{ x_ft: 10.0, P_kip: 10.0 }]
+  });
+
+  const [busyByMode, setBusyByMode] = useState({ padeye: false, spreader: false, spreader_two_way: false });
+  const [resultsByMode, setResultsByMode] = useState({ padeye: null, spreader: null, spreader_two_way: null });
+  const [errorByMode, setErrorByMode] = useState({ padeye: null, spreader: null, spreader_two_way: null });
+  const [noteByMode, setNoteByMode] = useState({ padeye: null, spreader: null, spreader_two_way: null });
+  const [reportVisibleByMode, setReportVisibleByMode] = useState({ padeye: false, spreader: false, spreader_two_way: false });
+  const [reportTokenByMode, setReportTokenByMode] = useState({ padeye: 0, spreader: 0, spreader_two_way: 0 });
 
   function withBase(url) {
     if (!apiBase) return url;
@@ -272,6 +674,27 @@ export default function App() {
     };
   }, [apiBase]);
 
+  useEffect(() => {
+    let active = true;
+    setSpreaderShapeLoading(true);
+    fetch(`${apiBase}/api/spreader_shapes`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!active) return;
+        if (json.ok && Array.isArray(json.items)) {
+          setSpreaderShapes(json.items);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!active) return;
+        setSpreaderShapeLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiBase]);
+
   const shackleMap = useMemo(() => {
     const out = new Map();
     shackles.forEach((item) => {
@@ -279,6 +702,30 @@ export default function App() {
     });
     return out;
   }, [shackles]);
+
+  const spreaderShapeOptions = useMemo(() => {
+    if (spreaderShapes.length) {
+      return spreaderShapes.map((item) => ({ value: item.label, label: item.label }));
+    }
+    const fallback = spr.shape || "Loading...";
+    return [{ value: fallback, label: fallback }];
+  }, [spreaderShapes, spr.shape]);
+
+  useEffect(() => {
+    if (!spreaderShapes.length) return;
+    const labels = new Set(spreaderShapes.map((item) => item.label));
+    if (!labels.has(spr.shape)) {
+      setSpr((prev) => ({ ...prev, shape: spreaderShapes[0].label }));
+    }
+  }, [spreaderShapes, spr.shape]);
+
+  useEffect(() => {
+    if (!spreaderShapes.length) return;
+    const labels = new Set(spreaderShapes.map((item) => item.label));
+    if (!labels.has(twoWay.shape)) {
+      setTwoWay((prev) => ({ ...prev, shape: spreaderShapes[0].label }));
+    }
+  }, [spreaderShapes, twoWay.shape]);
 
   const selectedShackle = shackleId !== "custom" ? shackleMap.get(shackleId) : null;
 
@@ -324,7 +771,12 @@ export default function App() {
         Fu: Number(Fu),
         impact_factor: Number(impact)
       };
-      const payload = activeMode === "padeye" ? { ...base, ...pad } : { ...base, ...spr };
+      const payload =
+        activeMode === "padeye"
+          ? { ...base, ...pad }
+          : activeMode === "spreader"
+          ? { ...base, ...spr }
+          : { ...base, ...twoWay };
       const response = await fetch(`${apiBase}/api/solve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -350,7 +802,7 @@ export default function App() {
 
   // Auto-run when inputs change (debounced)
   useEffect(() => {
-    const payloadKey = JSON.stringify({ mode, designCategory, Fy, Fu, impact, pad, spr, shackleId });
+    const payloadKey = JSON.stringify({ mode, designCategory, Fy, Fu, impact, pad, spr, twoWay, shackleId });
     const debounceMs = 400;
 
     function inputsAreValid(targetMode) {
@@ -358,15 +810,46 @@ export default function App() {
       if (!Number.isFinite(Number(Fy)) || !Number.isFinite(Number(Fu))) return false;
       if (!designCategory) return false;
       if (targetMode === "padeye") {
-        const required = [pad.P, pad.h, pad.t, pad.Dp, pad.Dh, pad.Wb, pad.H];
+        const required = [
+          pad.P,
+          pad.h,
+          pad.t,
+          pad.Dp,
+          pad.Dh,
+          pad.Wb,
+          pad.Wb1,
+          pad.H,
+          pad.R,
+          pad.a1,
+          pad.weld_size_16,
+          pad.weld_exx_ksi
+        ];
         for (const v of required) {
           if (!Number.isFinite(Number(v))) return false;
         }
-      } else {
+        if (!pad.weld_type || !pad.weld_group) return false;
+      } else if (targetMode === "spreader") {
         if (!spr || !spr.shape) return false;
-        const required = [spr.span_L_ft, spr.Lb_ft, spr.KL_ft];
+        const required = [spr.span_L_ft, spr.Lb_ft, spr.KL_ft, spr.ey];
         for (const v of required) {
           if (!Number.isFinite(Number(v))) return false;
+        }
+      } else if (targetMode === "spreader_two_way") {
+        if (!twoWay || !twoWay.shape) return false;
+        const required = [
+          twoWay.length_ft,
+          twoWay.padeye_edge_ft,
+          twoWay.padeye_height_in,
+          twoWay.sling_angle_deg
+        ];
+        for (const v of required) {
+          if (!Number.isFinite(Number(v))) return false;
+        }
+        if (Number(twoWay.padeye_edge_ft) * 2 >= Number(twoWay.length_ft)) return false;
+        const loads = Array.isArray(twoWay.point_loads) ? twoWay.point_loads : [];
+        for (const load of loads) {
+          if (!Number.isFinite(Number(load.x_ft)) || !Number.isFinite(Number(load.P_kip))) return false;
+          if (Number(load.x_ft) > Number(twoWay.length_ft) + 1e-9) return false;
         }
       }
       return true;
@@ -389,7 +872,7 @@ export default function App() {
     }, debounceMs);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify({ mode, designCategory, Fy, Fu, impact, pad, spr, shackleId })]);
+  }, [JSON.stringify({ mode, designCategory, Fy, Fu, impact, pad, spr, twoWay, shackleId })]);
 
   function buildReportUrl(targetMode, token) {
     const stamp = token ? `&t=${token}` : "";
@@ -516,6 +999,66 @@ export default function App() {
     }
   }
 
+  function updateTwoWayLoad(index, field, value) {
+    setTwoWay((prev) => {
+      const next = Array.isArray(prev.point_loads) ? [...prev.point_loads] : [];
+      const current = next[index] || { x_ft: 0, P_kip: 0 };
+      next[index] = { ...current, [field]: Number(value) };
+      return { ...prev, point_loads: next };
+    });
+  }
+
+  function addTwoWayLoad() {
+    setTwoWay((prev) => ({
+      ...prev,
+      point_loads: [...(prev.point_loads || []), { x_ft: 0, P_kip: 0 }]
+    }));
+  }
+
+  function removeTwoWayLoad(index) {
+    setTwoWay((prev) => {
+      const next = Array.isArray(prev.point_loads) ? [...prev.point_loads] : [];
+      next.splice(index, 1);
+      return { ...prev, point_loads: next.length ? next : [{ x_ft: 0, P_kip: 0 }] };
+    });
+  }
+
+  function pushTwoWayToSpreader() {
+    const results = resultsByMode.spreader_two_way;
+    const outputs = results && results.key_outputs ? results.key_outputs : null;
+    if (!outputs) {
+      setNoteByMode((prev) => ({ ...prev, spreader_two_way: "Run the two-way analysis first." }));
+      return;
+    }
+    const getVal = (key) => {
+      const entry = outputs[key];
+      if (entry && typeof entry === "object" && entry.value !== undefined) return Number(entry.value);
+      const v = Number(entry);
+      return Number.isFinite(v) ? v : 0;
+    };
+    const spanL = Number(twoWay.length_ft) || 0;
+    const spacing = spanL - 2.0 * (Number(twoWay.padeye_edge_ft) || 0);
+    const Mtotal = getVal("max_moment_total") || getVal("max_moment");
+    const Vmax = getVal("max_shear");
+    const Paxial = getVal("axial_compression");
+
+    setSpr((prev) => ({
+      ...prev,
+      shape: twoWay.shape || prev.shape,
+      span_L_ft: spanL,
+      Lb_ft: spanL,
+      KL_ft: spacing > 0 ? spacing : prev.KL_ft,
+      V_kip: Vmax,
+      P_kip: Paxial,
+      Mx_app_kipft: Mtotal,
+      ey: Number(twoWay.padeye_height_in) || prev.ey,
+      mx_includes_total: true,
+      include_self_weight: false
+    }));
+    setMode("spreader");
+    setNoteByMode((prev) => ({ ...prev, spreader: "Two-way results pushed into spreader tab." }));
+  }
+
   const results = resultsByMode[mode];
   const error = errorByMode[mode];
   const note = noteByMode[mode];
@@ -526,17 +1069,21 @@ export default function App() {
   const artifacts = results && results.artifacts ? results.artifacts : {};
   const checks = results && Array.isArray(results.checks) ? results.checks : [];
   const hasChecks = checks.length > 0;
+  const twoWayOutputs = resultsByMode.spreader_two_way && resultsByMode.spreader_two_way.key_outputs ? resultsByMode.spreader_two_way.key_outputs : null;
+  const twoWayTables = resultsByMode.spreader_two_way && resultsByMode.spreader_two_way.tables ? resultsByMode.spreader_two_way.tables : null;
+  const twoWayBeamSolver = twoWayTables && twoWayTables.two_way ? twoWayTables.two_way.beam_solver : null;
+  const twoWayDiagrams = normalizeBeamDiagrams(twoWayBeamSolver);
   const padeyeLimitStateOrder = [
     "Allowable Tensile Strength Through Pin Hole, Pt",
     "Allowable Single Plane Fracture Strength, Pb",
     "Allowable Double Plane Shear Strength, Pv",
-    "Hole Combined Stress",
     "Pin Bearing Stress",
     "Shear at Base of Padeye",
     "In-Plane Bending at Base of Padeye",
     "Out-of-plane Bending at Base of Padeye",
     "Tension at Base of Padeye",
-    "Combined Stress at Base of Padeye"
+    "Combined Stress at Base of Padeye",
+    "Weld Group Combined Stress"
   ];
   const orderedChecks = (() => {
     if (!hasChecks) return [];
@@ -554,6 +1101,21 @@ export default function App() {
     Pz: "Load Component Pz",
     governing_ratio: "Governing Utilization",
     governing_check: "Governing Limit State",
+    support_spacing: "Padeye Spacing",
+    total_load: "Total Vertical Load",
+    cg_x: "Load CG (from left)",
+    R_left: "Left Padeye Reaction",
+    R_right: "Right Padeye Reaction",
+    sling_angle_left: "Left Sling Angle",
+    sling_angle_right: "Right Sling Angle",
+    sling_length_left: "Left Sling Length",
+    sling_length_right: "Right Sling Length",
+    sling_tension_left: "Left Sling Tension",
+    sling_tension_right: "Right Sling Tension",
+    axial_compression: "Axial Compression (from slings)",
+    max_shear: "Max Shear (strong axis)",
+    max_moment: "Max Moment (vertical)",
+    max_moment_total: "Max Moment (incl. eccentric)",
     M_sw: "Self-Weight Moment",
     Mx_total: "Total Strong-Axis Moment",
     fbx: "Strong-Axis Bending Stress",
@@ -585,6 +1147,23 @@ export default function App() {
       "U_shear",
       "governing_ratio",
       "governing_check"
+    ],
+    spreader_two_way: [
+      "support_spacing",
+      "total_load",
+      "cg_x",
+      "R_left",
+      "R_right",
+      "sling_angle_left",
+      "sling_angle_right",
+      "sling_length_left",
+      "sling_length_right",
+      "sling_tension_left",
+      "sling_tension_right",
+      "axial_compression",
+      "max_shear",
+      "max_moment",
+      "max_moment_total"
     ]
   };
   const hiddenOutputs = new Set(["governing_step"]);
@@ -637,6 +1216,37 @@ export default function App() {
   const shackleBow = selectedShackle ? selectedShackle.bow_diameter_in : "";
   const shacklePin = selectedShackle ? selectedShackle.pin_diameter_in : "";
   const shackleE = selectedShackle ? selectedShackle.eccentricity_in : "";
+  const modeLabel =
+    mode === "padeye"
+      ? "Padeye"
+      : mode === "spreader_two_way"
+      ? "Spreader (Two-way)"
+      : "Spreader bar";
+  const weldSize16 = Number(pad.weld_size_16);
+  const weldSizeIn = Number.isFinite(weldSize16) ? weldSize16 / 16.0 : 0;
+  const weldSizeInDisplay = Number.isFinite(weldSizeIn) ? formatDim(weldSizeIn) : "-";
+  const effectiveThroatValue = (() => {
+    if (pad.weld_type === "CJP") return null;
+    if (pad.weld_type === "Fillet") return 0.707 * weldSizeIn;
+    if (pad.weld_type === "PJP 60° Bevel") return Number(pad.t) || 0;
+    if (pad.weld_type === "PJP 45° Bevel") return Math.max((Number(pad.t) || 0) - 0.125, 0);
+    return null;
+  })();
+  const effectiveThroatDisplay =
+    effectiveThroatValue === null ? "N/A" : formatDim(effectiveThroatValue);
+  const weldTypeOptions = [
+    { value: "Fillet", label: "Fillet" },
+    { value: "PJP 60° Bevel", label: "PJP 60° Bevel" },
+    { value: "PJP 45° Bevel", label: "PJP 45° Bevel" },
+    { value: "CJP", label: "CJP" }
+  ];
+  const weldGroupOptions =
+    pad.weld_type === "Fillet"
+      ? [
+          { value: "Long Sides Only", label: "Long Sides Only" },
+          { value: "All Around", label: "All Around" }
+        ]
+      : [{ value: "Long Sides Only", label: "Long Sides Only" }];
 
   return (
     <div className="container">
@@ -649,7 +1259,7 @@ export default function App() {
           </div>
         </div>
         <div className="masthead-tags">
-          <div className="tag">Mode: {mode === "padeye" ? "Padeye" : "Spreader bar"}</div>
+          <div className="tag">Mode: {modeLabel}</div>
           <div className="tag">Design category: {designCategory}</div>
           <div className="tag">Design factor Nd: {designFactor.toFixed(1)}</div>
         </div>
@@ -672,6 +1282,13 @@ export default function App() {
               type="button"
             >
               Spreader bar (rolled)
+            </button>
+            <button
+              className={`tab${mode === "spreader_two_way" ? " active" : ""}`}
+              onClick={() => setMode("spreader_two_way")}
+              type="button"
+            >
+              Spreader (Two-way)
             </button>
           </div>
 
@@ -740,16 +1357,22 @@ export default function App() {
                 onChange={(v) => setPad({ ...pad, h: Number(v) })}
               />
               <Field
-                label="Width at hole w"
+                label="Straight corner height a1"
                 units="in"
-                value={pad.w}
-                onChange={(v) => setPad({ ...pad, w: Number(v) })}
+                value={pad.a1}
+                onChange={(v) => setPad({ ...pad, a1: Number(v) })}
               />
               <Field
                 label="Width at base Wb"
                 units="in"
                 value={pad.Wb}
                 onChange={(v) => setPad({ ...pad, Wb: Number(v) })}
+              />
+              <Field
+                label="Hole center to edge Wb1"
+                units="in"
+                value={pad.Wb1}
+                onChange={(v) => setPad({ ...pad, Wb1: Number(v) })}
               />
               <Field
                 label="Plate thickness t"
@@ -771,7 +1394,7 @@ export default function App() {
                 disabled={shackleDisabled}
               />
               <Field
-                label="Hole center to top edge R"
+                label="Top radius R"
                 units="in"
                 value={pad.R}
                 onChange={(v) => setPad({ ...pad, R: Number(v) })}
@@ -825,19 +1448,71 @@ export default function App() {
                 onChange={(v) => setPad({ ...pad, ey: Number(v) })}
                 disabled={shackleDisabled}
               />
+              <div className="section-title">Base weld</div>
+              <Select
+                label="Weld type"
+                value={pad.weld_type}
+                onChange={(value) =>
+                  setPad((prev) => ({
+                    ...prev,
+                    weld_type: value,
+                    weld_group: value === "Fillet" ? prev.weld_group : "Long Sides Only"
+                  }))
+                }
+                options={weldTypeOptions}
+              />
+              <Select
+                label="Weld group"
+                value={pad.weld_group}
+                onChange={(value) => setPad({ ...pad, weld_group: value })}
+                options={weldGroupOptions}
+              />
+              <Field
+                label="Weld size (sixteenths)"
+                units="1/16 in"
+                value={pad.weld_size_16}
+                step="1"
+                onChange={(v) => {
+                  const raw = Number(v);
+                  const next = Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0;
+                  setPad({ ...pad, weld_size_16: next });
+                }}
+              />
+              <Field
+                label="Weld size (calc)"
+                units="in"
+                value={weldSizeInDisplay}
+                type="text"
+                onChange={() => {}}
+                disabled
+              />
+              <Field
+                label="Effective throat te"
+                units="in"
+                value={effectiveThroatDisplay}
+                type="text"
+                onChange={() => {}}
+                disabled
+              />
+              <Field
+                label="Weld metal strength Exx"
+                units="ksi"
+                value={pad.weld_exx_ksi}
+                onChange={(v) => setPad({ ...pad, weld_exx_ksi: Number(v) })}
+              />
               <button className="btn btn-secondary" disabled={busy} onClick={optimizeTheta} type="button">
                 {busy ? "Running..." : "Find Worst-Case Theta"}
               </button>
             </div>
-          ) : (
+          ) : mode === "spreader" ? (
             <div>
               <div className="section-title">Spreader inputs</div>
-              <Field
+              <Select
                 label="Shape (AISC label)"
-                units=""
-                type="text"
                 value={spr.shape}
                 onChange={(v) => setSpr({ ...spr, shape: v })}
+                options={spreaderShapeOptions}
+                disabled={spreaderShapeLoading || !spreaderShapes.length}
               />
               <Field
                 label="Span L"
@@ -856,6 +1531,13 @@ export default function App() {
                 units="ft"
                 value={spr.KL_ft}
                 onChange={(v) => setSpr({ ...spr, KL_ft: Number(v) })}
+              />
+              <Field
+                label="Top padeye height ey"
+                units="in"
+                value={spr.ey}
+                onChange={(v) => setSpr({ ...spr, ey: Number(v) })}
+                disabled={spr.mx_includes_total}
               />
               <Field label="Cb" units="-" value={spr.Cb} onChange={(v) => setSpr({ ...spr, Cb: Number(v) })} />
               <Field
@@ -879,33 +1561,6 @@ export default function App() {
                   { value: "false", label: "No" }
                 ]}
               />
-              <Select
-                label="Include weld sizing check"
-                value={String(spr.weld_check)}
-                onChange={(v) => setSpr({ ...spr, weld_check: v === "true" })}
-                options={[
-                  { value: "false", label: "No" },
-                  { value: "true", label: "Yes" }
-                ]}
-              />
-              <Field
-                label="Fillet weld size"
-                units="in"
-                value={spr.weld_size_in}
-                onChange={(v) => setSpr({ ...spr, weld_size_in: Number(v) })}
-              />
-              <Field
-                label="Total effective weld length"
-                units="in"
-                value={spr.weld_length_in}
-                onChange={(v) => setSpr({ ...spr, weld_length_in: Number(v) })}
-              />
-              <Field
-                label="Weld metal strength Exx"
-                units="ksi"
-                value={spr.weld_exx_ksi}
-                onChange={(v) => setSpr({ ...spr, weld_exx_ksi: Number(v) })}
-              />
               <Field
                 label="Shear V"
                 units="kip"
@@ -924,6 +1579,15 @@ export default function App() {
                 value={spr.Mx_app_kipft}
                 onChange={(v) => setSpr({ ...spr, Mx_app_kipft: Number(v) })}
               />
+              <Select
+                label="Mx includes self-weight + axial eccentricity"
+                value={String(spr.mx_includes_total)}
+                onChange={(v) => setSpr({ ...spr, mx_includes_total: v === "true" })}
+                options={[
+                  { value: "false", label: "No (compute automatically)" },
+                  { value: "true", label: "Yes (Mx is total)" }
+                ]}
+              />
               <Field
                 label="Applied weak-axis moment My"
                 units="kip-ft"
@@ -938,9 +1602,94 @@ export default function App() {
                   { value: "true", label: "Yes" },
                   { value: "false", label: "No" }
                 ]}
+                disabled={spr.mx_includes_total}
               />
               <button className="btn btn-secondary" disabled={busy} onClick={optimizeSection} type="button">
                 {busy ? "Running..." : "Optimize Section (Min Weight)"}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="section-title">Spreader two-way inputs</div>
+              <Select
+                label="Shape (AISC label)"
+                value={twoWay.shape}
+                onChange={(v) => setTwoWay({ ...twoWay, shape: v })}
+                options={spreaderShapeOptions}
+                disabled={spreaderShapeLoading || !spreaderShapes.length}
+              />
+              <Field
+                label="Total beam length"
+                units="ft"
+                value={twoWay.length_ft}
+                onChange={(v) => setTwoWay({ ...twoWay, length_ft: Number(v) })}
+              />
+              <Field
+                label="Edge to top padeye hole"
+                units="ft"
+                value={twoWay.padeye_edge_ft}
+                onChange={(v) => setTwoWay({ ...twoWay, padeye_edge_ft: Number(v) })}
+              />
+              <Field
+                label="Top of beam to padeye hole"
+                units="in"
+                value={twoWay.padeye_height_in}
+                onChange={(v) => setTwoWay({ ...twoWay, padeye_height_in: Number(v) })}
+              />
+              <Field
+                label="Minimum sling angle (from horizontal)"
+                units="deg"
+                value={twoWay.sling_angle_deg}
+                onChange={(v) => setTwoWay({ ...twoWay, sling_angle_deg: Number(v) })}
+              />
+              <div className="section-title">Point loads (vertical)</div>
+              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 8 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", paddingBottom: 6 }}>x (ft)</th>
+                    <th style={{ textAlign: "left", paddingBottom: 6 }}>P (kip)</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(twoWay.point_loads || []).map((load, idx) => (
+                    <tr key={`tw-load-${idx}`}>
+                      <td style={{ paddingBottom: 6 }}>
+                        <input
+                          type="number"
+                          step="any"
+                          value={load.x_ft}
+                          onChange={(ev) => updateTwoWayLoad(idx, "x_ft", ev.target.value)}
+                        />
+                      </td>
+                      <td style={{ paddingBottom: 6 }}>
+                        <input
+                          type="number"
+                          step="any"
+                          value={load.P_kip}
+                          onChange={(ev) => updateTwoWayLoad(idx, "P_kip", ev.target.value)}
+                        />
+                      </td>
+                      <td style={{ paddingBottom: 6 }}>
+                        <button type="button" className="btn btn-secondary" onClick={() => removeTwoWayLoad(idx)}>
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button type="button" className="btn btn-secondary" onClick={addTwoWayLoad}>
+                Add Load
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ marginLeft: 8 }}
+                onClick={pushTwoWayToSpreader}
+                disabled={busy || !resultsByMode.spreader_two_way}
+              >
+                Push to Spreader Tab
               </button>
             </div>
           )}
@@ -960,12 +1709,61 @@ export default function App() {
               <PadeyeDiagram
                 H={pad.H}
                 h={pad.h}
-                w={pad.w}
+                a1={pad.a1}
                 Wb={pad.Wb}
+                Wb1={pad.Wb1}
                 t={pad.t}
                 Dh={pad.Dh}
                 R={pad.R}
               />
+            </div>
+          ) : null}
+          {mode === "spreader_two_way" ? (
+            <div className="card" style={{ marginBottom: "16px" }}>
+              <div className="card-title">Spreader Geometry + Rigging</div>
+              <SpreaderTwoWayDiagram
+                lengthFt={twoWay.length_ft}
+                padeyeEdgeFt={twoWay.padeye_edge_ft}
+                padeyeHeightIn={twoWay.padeye_height_in}
+                pointLoads={twoWay.point_loads}
+                shapeLabel={twoWay.shape}
+                shapeDepthIn={twoWayTables && twoWayTables.two_way ? twoWayTables.two_way.shape_depth_in : null}
+                selfWeightKipFt={twoWayTables && twoWayTables.two_way ? twoWayTables.two_way.self_weight_kipft : null}
+                slingAngleMinDeg={twoWay.sling_angle_deg}
+                outputs={twoWayOutputs}
+              />
+              <div style={{ padding: "0 10px 12px 10px" }}>
+                <LineDiagram
+                  title="Strong-Axis Moment Diagram"
+                  xVals={twoWayDiagrams ? twoWayDiagrams.x_ft : []}
+                  yVals={twoWayDiagrams ? twoWayDiagrams.moment_kipft : []}
+                  units="kip-ft"
+                  color="#f59e0b"
+                />
+                <LineDiagram
+                  title="Shear Diagram"
+                  xVals={twoWayDiagrams ? twoWayDiagrams.x_ft : []}
+                  yVals={twoWayDiagrams ? twoWayDiagrams.shear_kip : []}
+                  units="kip"
+                  color="#38bdf8"
+                />
+                <LineDiagram
+                  title="Axial Diagram"
+                  xVals={
+                    twoWayOutputs
+                      ? [0, twoWay.length_ft]
+                      : []
+                  }
+                  yVals={
+                    twoWayOutputs
+                      ? [Number(twoWayOutputs.axial_compression && twoWayOutputs.axial_compression.value !== undefined ? twoWayOutputs.axial_compression.value : twoWayOutputs.axial_compression) || 0,
+                         Number(twoWayOutputs.axial_compression && twoWayOutputs.axial_compression.value !== undefined ? twoWayOutputs.axial_compression.value : twoWayOutputs.axial_compression) || 0]
+                      : []
+                  }
+                  units="kip"
+                  color="#22c55e"
+                />
+              </div>
             </div>
           ) : null}
           <div className="card" style={{ marginBottom: "16px" }}>
@@ -981,7 +1779,9 @@ export default function App() {
                       const numeric = typeof value === "number" ? value : Number(value);
                       const numVal = Number.isFinite(numeric) ? numeric : (value && typeof value === "object" && Number.isFinite(Number(value.value)) ? Number(value.value) : null);
                       if (numVal !== null) {
-                        governingUtilStyle = numVal > 1 ? { backgroundColor: "#ffcccc", borderColor: "#cc0000" } : { backgroundColor: "#ccffcc", borderColor: "#00aa00" };
+                        governingUtilStyle = numVal > 1
+                          ? { backgroundColor: "#7f1d1d", borderColor: "#5f1414" }
+                          : { backgroundColor: "#166534", borderColor: "#14532d" };
                       }
                     }
                     return (

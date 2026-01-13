@@ -5,11 +5,12 @@ from urllib.parse import urlparse, parse_qs
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-from ..models import PadeyeInputs, SpreaderInputs
-from ..shape_db import load_shapes, search_shapes
+from ..models import PadeyeInputs, SpreaderInputs, SpreaderTwoWayInputs
 from ..calc_trace import CalcTrace, CalcTraceMeta, TraceInput, Assumption, compute_step
 from ..paths import input_hash as compute_input_hash
 from ..exports import export_all
+from toolbox_app.blocks.aisc_shapes_db import ShapeDatabase, Shape as AiscShape
+from toolbox_app.blocks.rigging_db import get_shackles
 
 TOOL_ID = "bth_spreader_padeye"
 TOOL_VERSION = "1.2.0"
@@ -20,123 +21,102 @@ TOOL_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = TOOL_DIR / "frontend" / "dist"
 RUN_DIR = Path(os.environ.get("BTH_TOOL_RUN_DIR", str(Path.home() / ".local" / "share" / "EngineeringToolbox" / TOOL_ID / "runs" / "dev_run")))
 RUN_DIR.mkdir(parents=True, exist_ok=True)
-VALID_MODES = ("padeye","spreader")
+VALID_MODES = ("padeye","spreader","spreader_two_way")
 LAST_MODE: str | None = None
 
-SHAPES = load_shapes(TOOL_DIR)
-SHACKLES_CACHE: list[Dict[str, Any]] | None = None
+_AISC_DB: ShapeDatabase | None = None
+_SHAPES: Dict[str, AiscShape] | None = None
+_SPREADER_SHAPES: list[Dict[str, str]] | None = None
 
-def _load_shackle_db(tool_dir: Path) -> list[Dict[str, Any]]:
-    xlsx_path = tool_dir / "assets" / "BTH-1-2023-Padeye and Spreader Bar Design Sheet.xlsx"
-    if not xlsx_path.exists():
-        return []
-    try:
-        import openpyxl
-    except Exception:
-        return []
+def _load_aisc_shapes(db: ShapeDatabase) -> Dict[str, AiscShape]:
+    out: Dict[str, AiscShape] = {}
+    labels_by_type = db.list_labels_by_typecode()
+    for labels in labels_by_type.values():
+        for label in labels:
+            try:
+                shp = db.get_shape(label)
+            except Exception:
+                continue
+            out[shp.label] = shp
+            upper = shp.label.upper()
+            if upper not in out:
+                out[upper] = shp
+    return out
 
-    def _num(val):
-        try:
-            return float(val)
-        except Exception:
-            return None
-
-    def _wll_key(val):
-        v = _num(val)
-        if v is None:
-            return None
-        return round(v, 6)
-
-    wb = openpyxl.load_workbook(xlsx_path, data_only=True, read_only=True)
-    if "Shackle Database" not in wb.sheetnames:
-        return []
-    ws = wb["Shackle Database"]
-
-    ecc_map: Dict[str, Dict[float, float]] = {
-        "G-209": {},
-        "G-210": {},
-        "G-2130": {},
-        "G-2150": {},
-        "G-2160": {},
-    }
-
-    # Eccentricities table (AE3:AI22)
-    col_ae = 31
-    headers = [ws.cell(2, c).value for c in range(col_ae, col_ae + 5)]
-    header_map: Dict[int, str] = {}
-    for idx, val in enumerate(headers):
-        if isinstance(val, str) and val.strip():
-            header_map[col_ae + idx] = val.strip()
-
-    for r in range(3, 23):
-        wll = _wll_key(ws.cell(r, col_ae).value)
-        if wll is None:
+def _search_shapes(shapes: Dict[str, AiscShape], q: str, limit: int = 50) -> list[AiscShape]:
+    q2 = (q or "").strip().upper()
+    if not q2:
+        seen: set[str] = set()
+        out: list[AiscShape] = []
+        for shp in shapes.values():
+            if shp.label in seen:
+                continue
+            seen.add(shp.label)
+            out.append(shp)
+            if len(out) >= limit:
+                break
+        return out
+    hits: list[AiscShape] = []
+    seen: set[str] = set()
+    for k, shp in shapes.items():
+        if q2 not in k.upper():
             continue
-        for c, typ in header_map.items():
-            if typ not in ecc_map:
-                continue
-            e = _num(ws.cell(r, c).value)
-            if e is not None:
-                ecc_map[typ][wll] = e
+        if shp.label in seen:
+            continue
+        seen.add(shp.label)
+        hits.append(shp)
+        if len(hits) >= limit:
+            break
+    return hits
 
-    # G-2160 eccentricities from C82:H100 (col H)
-    for r in range(82, 101):
-        wll = _wll_key(ws.cell(r, 3).value)
-        e = _num(ws.cell(r, 8).value)
-        if wll is not None and e is not None:
-            ecc_map["G-2160"][wll] = e
+_ALLOWED_SPREADER_TYPES = {"W", "S", "M", "HP", "HSS", "PIPE"}
 
-    # WLL, bow diameter, pin diameter tables by type
-    type_ranges = {
-        "G-209": ("AF", 82, 98),
-        "G-210": ("AB", 82, 97),
-        "G-2130": ("X", 82, 101),
-        "G-2150": ("T", 82, 98),
-        "G-2160": ("P", 81, 100),
-    }
-
-    from openpyxl.utils import column_index_from_string
-
-    items: list[Dict[str, Any]] = []
-    for typ, (col, r0, r1) in type_ranges.items():
-        cs = column_index_from_string(col)
-        for r in range(r0, r1 + 1):
-            wll_raw = ws.cell(r, cs).value
-            wll = _wll_key(wll_raw)
-            bow = _num(ws.cell(r, cs + 1).value)
-            pin = _num(ws.cell(r, cs + 2).value)
-            if wll is None or bow is None or pin is None:
-                continue
-            e = ecc_map.get(typ, {}).get(wll)
-            if e is None:
-                continue
-            items.append(
-                {
-                    "id": f"{typ}|{wll}",
-                    "type": typ,
-                    "wll_t": wll,
-                    "bow_diameter_in": bow,
-                    "pin_diameter_in": pin,
-                    "eccentricity_in": e,
-                }
-            )
-
-    items.sort(key=lambda x: (x["type"], x["wll_t"]))
+def _load_spreader_shape_options(db: ShapeDatabase) -> list[Dict[str, str]]:
+    by_type = db.list_labels_by_typecode()
+    items: list[Dict[str, str]] = []
+    def _add(labels: list[str], group: str) -> None:
+        for label in labels:
+            items.append({"label": label, "type": group})
+    for t in ("W", "S", "M", "HP"):
+        _add(by_type.get(t, []), t)
+    hss_labels = by_type.get("HSS", [])
+    hss_rect, hss_round = db.partition_hss_labels(hss_labels)
+    _add(hss_rect, "HSS Rect/Square")
+    _add(hss_round, "HSS Round")
+    _add(by_type.get("PIPE", []), "PIPE")
     return items
 
-def _get_shackles():
-    global SHACKLES_CACHE
-    if SHACKLES_CACHE is None:
-        SHACKLES_CACHE = _load_shackle_db(TOOL_DIR)
-    return SHACKLES_CACHE
+def _get_aisc_db() -> ShapeDatabase:
+    global _AISC_DB
+    if _AISC_DB is None:
+        _AISC_DB = ShapeDatabase()
+    return _AISC_DB
+
+def _get_shapes() -> Dict[str, AiscShape]:
+    global _SHAPES
+    if _SHAPES is None:
+        _SHAPES = _load_aisc_shapes(_get_aisc_db())
+    return _SHAPES
+
+def _get_spreader_shapes() -> list[Dict[str, str]]:
+    global _SPREADER_SHAPES
+    if _SPREADER_SHAPES is None:
+        _SPREADER_SHAPES = _load_spreader_shape_options(_get_aisc_db())
+    return _SPREADER_SHAPES
+
+def _load_beam_solver():
+    import importlib
+    return importlib.import_module("toolbox_app.blocks.1D_beam_solver")
 
 
 def _units_map(k: str) -> str:
     m = {
-        "P":"kip","theta_deg":"deg","beta_deg":"deg","H":"in","h":"in","w":"in","Wb":"in","t":"in","Dh":"in","Dp":"in","R":"in","tcheek":"in","ex":"in","ey":"in",
+        "P":"kip","theta_deg":"deg","beta_deg":"deg","H":"in","h":"in","a1":"in","Wb":"in","Wb1":"in","t":"in","Dh":"in","Dp":"in","R":"in","tcheek":"in","ex":"in","ey":"in",
+        "weld_type":"", "weld_group":"", "weld_size_16":"1/16 in", "weld_exx_ksi":"ksi",
         "Fy":"ksi","Fu":"ksi","Nd":"-","design_category":"-","impact_factor":"-",
-        "shape":"", "span_L_ft":"ft","Lb_ft":"ft","KL_ft":"ft","Cb":"-","V_kip":"kip","P_kip":"kip","Mx_app_kipft":"kip-ft","My_app_kipft":"kip-ft",
-        "include_self_weight":"-","Cmx":"-","Cmy":"-","braced_against_twist":"-","weld_check":"-","weld_size_in":"in","weld_length_in":"in","weld_exx_ksi":"ksi","mode":""
+        "shape":"", "span_L_ft":"ft","Lb_ft":"ft","KL_ft":"ft","ey":"in","mx_includes_total":"-","Cb":"-","V_kip":"kip","P_kip":"kip","Mx_app_kipft":"kip-ft","My_app_kipft":"kip-ft",
+        "include_self_weight":"-","Cmx":"-","Cmy":"-","braced_against_twist":"-","weld_check":"-","weld_size_in":"in","weld_length_in":"in","weld_exx_ksi":"ksi",
+        "length_ft":"ft","padeye_edge_ft":"ft","padeye_height_in":"in","sling_angle_deg":"deg","point_loads":"", "mode":""
     }
     return m.get(k,"")
 
@@ -200,6 +180,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     inp = _apply_design_category(inp)
     d = inp.model_dump()
     trace = _base_trace(d)
+    weld_warnings: list[str] = []
 
     P = inp.P * inp.impact_factor
 
@@ -247,6 +228,126 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         references=[dict(type="code", ref="ASME BTH-1-2023 Ch.3 load component resolution (padeye global)")]
     )
 
+
+    def _padeye_width_at_hole(Wb: float, a1: float, R: float, H: float, h: float, e_z: float) -> float:
+        if Wb <= 0:
+            return 0.0
+        if R <= 0:
+            return Wb
+
+        y_center = H - R
+        x_left = -Wb / 2.0
+        x_right = Wb / 2.0
+        R2 = R * R
+
+        def _tangent_point(x_edge: float) -> tuple[float, float] | None:
+            dx = x_edge - e_z
+            dy = a1 - y_center
+            d2 = dx * dx + dy * dy
+            if d2 <= R2:
+                return None
+            sqrt_term = math.sqrt(max(d2 - R2, 0.0))
+            coeff1 = R2 / d2
+            coeff2 = R * sqrt_term / d2
+            px = -dy
+            py = dx
+            tx1 = e_z + coeff1 * dx + coeff2 * px
+            ty1 = y_center + coeff1 * dy + coeff2 * py
+            tx2 = e_z + coeff1 * dx - coeff2 * px
+            ty2 = y_center + coeff1 * dy - coeff2 * py
+            return max([(tx1, ty1), (tx2, ty2)], key=lambda c: c[1])
+
+        def _edge_x(x_edge: float, side_sign: float) -> float:
+            if h <= a1 + 1e-9:
+                return x_edge
+            tangent = _tangent_point(x_edge)
+            if tangent is not None:
+                tx, ty = tangent
+                if h <= ty + 1e-9 and abs(ty - a1) > 1e-9:
+                    t = (h - a1) / (ty - a1)
+                    return x_edge + t * (tx - x_edge)
+            dy = h - y_center
+            if abs(dy) <= R:
+                dx = math.sqrt(max(R2 - dy * dy, 0.0))
+                return e_z + side_sign * dx
+            return x_edge
+
+        left_x = _edge_x(x_left, -1.0)
+        right_x = _edge_x(x_right, 1.0)
+        width = right_x - left_x
+        return width if width > 0 else Wb
+
+    def _max_weld_eq_stress(v: Dict[str, float]) -> float:
+        Aw = v["A_w"]
+        if Aw <= 0:
+            return 0.0
+        x_vals = (-v["W_b"] / 2.0, v["W_b"] / 2.0)
+        z_vals = (-v["t"] / 2.0, v["t"] / 2.0)
+        max_eq = 0.0
+        for x in x_vals:
+            for z in z_vals:
+                sigma = v["P_y"] / Aw
+                if v["I_xw"] > 0:
+                    sigma += (v["M_x"] * z) / v["I_xw"]
+                if v["I_zw"] > 0:
+                    sigma += (v["M_z"] * x) / v["I_zw"]
+                tau_x = v["P_x"] / Aw
+                tau_z = v["P_z"] / Aw
+                if v["J_w"] > 0:
+                    tau_x += (-v["T"] * z) / v["J_w"]
+                    tau_z += (v["T"] * x) / v["J_w"]
+                tau = math.sqrt(tau_x**2 + tau_z**2)
+                eq = math.sqrt(sigma**2 + tau**2)
+                if eq > max_eq:
+                    max_eq = eq
+        return max_eq
+
+    e_z = compute_step(
+        trace, "P-062A", "Padeye Geometry", "Hole offset from base centerline",
+        "e_z", "Horizontal offset from base centerline to hole center",
+        "e_z = W_b/2 - W_b1",
+        variables=[
+            dict(symbol="W_b", description="Base width", value=inp.Wb, units="in", source="input:Wb"),
+            dict(symbol="W_b1", description="Hole center to edge distance", value=inp.Wb1, units="in", source="input:Wb1"),
+        ],
+        compute_fn=lambda v: v["W_b"]/2.0 - v["W_b1"],
+        units="in",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:HoleOffsetFromWb1")]
+    )
+
+    R_edge = compute_step(
+        trace, "P-062B", "Padeye Geometry", "Top edge distance to hole center",
+        "R_edge", "Vertical distance from top edge to hole center",
+        "R_edge = H - h",
+        variables=[
+            dict(symbol="H", description="Padeye height", value=inp.H, units="in", source="input:H"),
+            dict(symbol="h", description="Height to hole center", value=inp.h, units="in", source="input:h"),
+        ],
+        compute_fn=lambda v: max(v["H"] - v["h"], 0.0),
+        units="in",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:TopEdgeDistance")]
+    )
+
+    w_hole = compute_step(
+        trace, "P-062C", "Padeye Geometry", "Width at hole (derived)",
+        "w", "Width at hole derived from base + top radius geometry",
+        "w = f(W_b, a1, R, H, h, e_z)",
+        variables=[
+            dict(symbol="W_b", description="Base width", value=inp.Wb, units="in", source="input:Wb"),
+            dict(symbol="a1", description="Straight vertical corner height", value=inp.a1, units="in", source="input:a1"),
+            dict(symbol="R", description="Top radius", value=inp.R, units="in", source="input:R"),
+            dict(symbol="H", description="Padeye height", value=inp.H, units="in", source="input:H"),
+            dict(symbol="h", description="Height to hole center", value=inp.h, units="in", source="input:h"),
+            dict(symbol="e_z", description="Hole offset", value=e_z, units="in", source="step:P-062A"),
+        ],
+        compute_fn=lambda v: _padeye_width_at_hole(v["W_b"], v["a1"], v["R"], v["H"], v["h"], v["e_z"]),
+        units="in",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_padeye:WidthAtHoleFromGeometry")]
+    )
+
     V = compute_step(
         trace, "P-063", "Padeye Base Actions", "Resultant base shear",
         "V", "Resultant shear at base from Px and Pz",
@@ -263,16 +364,18 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     Mz = compute_step(
         trace, "P-064", "Padeye Base Actions", "Strong-axis base moment",
-        "M_z", "Base bending moment from Px at lever arm h",
-        "M_z = P_x · h",
+        "M_z", "Base bending moment including hole offset",
+        "M_z = P_x · h - P_y · e_z",
         variables=[
             dict(symbol="P_x", description="In-plane x component", value=Px, units="kip", source="step:P-060"),
+            dict(symbol="P_y", description="In-plane y component", value=Py, units="kip", source="step:P-061"),
             dict(symbol="h", description="Height to hole center", value=inp.h, units="in", source="input:h"),
+            dict(symbol="e_z", description="Hole offset", value=e_z, units="in", source="step:P-062A"),
         ],
-        compute_fn=lambda v: v["P_x"]*v["h"],
+        compute_fn=lambda v: v["P_x"]*v["h"] - v["P_y"]*v["e_z"],
         units="kip-in",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=3),
-        references=[dict(type="code", ref="ASME BTH-1-2023 Ch.3 padeye global bending at base")]
+        references=[dict(type="derived", ref="backend._solve_padeye:StrongAxisMomentWithOffset")]
     )
 
     Mx = compute_step(
@@ -585,6 +688,186 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         checks_builder=lambda _u,_r: [dict(label="Tension at Base of Padeye", demand=f_t, capacity=Fallow, ratio=(f_t/Fallow if Fallow>0 else 1e9), pass_fail="PASS" if f_t <= Fallow else "FAIL")]
     )
 
+    # Weld group check at base (elastic method)
+    if inp.weld_type == "CJP":
+        weld_warnings.append("CJP weld assumed to meet or exceed base metal capacity; weld group check skipped.")
+    else:
+        weld_size_in = compute_step(
+            trace, "P-095", "Padeye Weld", "Weld size (leg) from 16ths",
+            "w_weld", "Weld leg size",
+            "w_weld = w_16 / 16",
+            variables=[dict(symbol="w_16", description="Weld size in 16ths", value=inp.weld_size_16, units="1/16 in", source="input:weld_size_16")],
+            compute_fn=lambda v: v["w_16"] / 16.0,
+            units="in",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+            references=[dict(type="derived", ref="backend._solve_padeye:WeldSizeFromSixteenths")]
+        )
+
+        if inp.weld_type == "Fillet":
+            te = compute_step(
+                trace, "P-096", "Padeye Weld", "Effective throat (fillet)",
+                "t_e", "Effective throat",
+                "t_e = 0.707 * w_weld",
+                variables=[dict(symbol="w_weld", description="Fillet weld leg size", value=weld_size_in, units="in", source="step:P-095")],
+                compute_fn=lambda v: 0.707 * v["w_weld"],
+                units="in",
+                rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+                references=[dict(type="code", ref="AWS fillet weld effective throat definition (0.707w)")]
+            )
+        elif inp.weld_type == "PJP 60° Bevel":
+            te = compute_step(
+                trace, "P-096", "Padeye Weld", "Effective throat (PJP 60°)",
+                "t_e", "Effective throat",
+                "t_e = t",
+                variables=[dict(symbol="t", description="Plate thickness", value=inp.t, units="in", source="input:t")],
+                compute_fn=lambda v: v["t"],
+                units="in",
+                rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+                references=[dict(type="derived", ref="backend._solve_padeye:PJP60EffectiveThroat")]
+            )
+        else:
+            te = compute_step(
+                trace, "P-096", "Padeye Weld", "Effective throat (PJP 45°)",
+                "t_e", "Effective throat",
+                "t_e = t - 1/8",
+                variables=[dict(symbol="t", description="Plate thickness", value=inp.t, units="in", source="input:t")],
+                compute_fn=lambda v: max(v["t"] - 0.125, 0.0),
+                units="in",
+                rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+                references=[dict(type="derived", ref="backend._solve_padeye:PJP45EffectiveThroat")]
+            )
+
+        L_w = compute_step(
+            trace, "P-097", "Padeye Weld", "Total weld length",
+            "L_w", "Total weld length (weld group)",
+            "L_w = 2 * (W_b + t) for all-around, else 2 * W_b",
+            variables=[
+                dict(symbol="W_b", description="Plate width at base", value=inp.Wb, units="in", source="input:Wb"),
+                dict(symbol="t", description="Plate thickness", value=inp.t, units="in", source="input:t"),
+                dict(symbol="group", description="Weld group", value=inp.weld_group, units="", source="input:weld_group"),
+            ],
+            compute_fn=lambda v: 2.0 * (v["W_b"] + v["t"]) if v["group"] == "All Around" else 2.0 * v["W_b"],
+            units="in",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+            references=[dict(type="derived", ref="backend._solve_padeye:WeldGroupLength")]
+        )
+
+        Aw = compute_step(
+            trace, "P-098", "Padeye Weld", "Effective weld throat area",
+            "A_w", "Effective weld throat area",
+            "A_w = t_e * L_w",
+            variables=[
+                dict(symbol="t_e", description="Effective throat", value=te, units="in", source="step:P-096"),
+                dict(symbol="L_w", description="Weld length", value=L_w, units="in", source="step:P-097"),
+            ],
+            compute_fn=lambda v: v["t_e"] * v["L_w"],
+            units="in^2",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=5),
+            references=[dict(type="derived", ref="backend._solve_padeye:WeldArea")]
+        )
+
+        Ix_w = compute_step(
+            trace, "P-099", "Padeye Weld", "Weld group inertia about x",
+            "I_xw", "Weld group inertia about x-axis",
+            "I_xw = t_e * (W_b * t^2 / 2 + t^3 / 6) for all-around, else t_e * W_b * t^2 / 2",
+            variables=[
+                dict(symbol="t_e", description="Effective throat", value=te, units="in", source="step:P-096"),
+                dict(symbol="W_b", description="Plate width at base", value=inp.Wb, units="in", source="input:Wb"),
+                dict(symbol="t", description="Plate thickness", value=inp.t, units="in", source="input:t"),
+                dict(symbol="group", description="Weld group", value=inp.weld_group, units="", source="input:weld_group"),
+            ],
+            compute_fn=lambda v: v["t_e"] * ((v["W_b"] * (v["t"]**2) / 2.0 + (v["t"]**3) / 6.0) if v["group"] == "All Around" else (v["W_b"] * (v["t"]**2) / 2.0)),
+            units="in^4",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=5),
+            references=[dict(type="derived", ref="backend._solve_padeye:WeldInertiaX")]
+        )
+
+        Iz_w = compute_step(
+            trace, "P-100", "Padeye Weld", "Weld group inertia about z",
+            "I_zw", "Weld group inertia about z-axis",
+            "I_zw = t_e * (W_b^3 / 6 + t * W_b^2 / 2) for all-around, else t_e * W_b^3 / 6",
+            variables=[
+                dict(symbol="t_e", description="Effective throat", value=te, units="in", source="step:P-096"),
+                dict(symbol="W_b", description="Plate width at base", value=inp.Wb, units="in", source="input:Wb"),
+                dict(symbol="t", description="Plate thickness", value=inp.t, units="in", source="input:t"),
+                dict(symbol="group", description="Weld group", value=inp.weld_group, units="", source="input:weld_group"),
+            ],
+            compute_fn=lambda v: v["t_e"] * ((v["W_b"]**3 / 6.0 + v["t"] * (v["W_b"]**2) / 2.0) if v["group"] == "All Around" else (v["W_b"]**3 / 6.0)),
+            units="in^4",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=5),
+            references=[dict(type="derived", ref="backend._solve_padeye:WeldInertiaZ")]
+        )
+
+        J_w = compute_step(
+            trace, "P-101", "Padeye Weld", "Weld group polar inertia",
+            "J_w", "Weld group polar inertia (Ix + Iz)",
+            "J_w = I_xw + I_zw",
+            variables=[
+                dict(symbol="I_xw", description="Weld group Ix", value=Ix_w, units="in^4", source="step:P-099"),
+                dict(symbol="I_zw", description="Weld group Iz", value=Iz_w, units="in^4", source="step:P-100"),
+            ],
+            compute_fn=lambda v: v["I_xw"] + v["I_zw"],
+            units="in^4",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=5),
+            references=[dict(type="derived", ref="backend._solve_padeye:WeldPolarInertia")]
+        )
+
+        Fw_allow = compute_step(
+            trace, "P-102", "Padeye Weld", "Allowable weld stress",
+            "F_w", "Allowable weld throat stress",
+            "F_w = 0.6 * E_xx / N_d",
+            variables=[
+                dict(symbol="E_xx", description="Weld metal tensile strength", value=inp.weld_exx_ksi, units="ksi", source="input:weld_exx_ksi"),
+                dict(symbol="N_d", description="Design factor", value=inp.Nd, units="-", source="input:Nd"),
+            ],
+            compute_fn=lambda v: 0.6 * v["E_xx"] / v["N_d"],
+            units="ksi",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=5),
+            references=[dict(type="derived", ref="backend._solve_padeye:WeldAllowableStress")]
+        )
+
+        if Aw <= 0 or Ix_w <= 0 or Iz_w <= 0 or J_w <= 0:
+            weld_warnings.append("Weld group geometry produced zero throat area or inertia; weld check skipped.")
+        else:
+            f_eq_weld = compute_step(
+                trace, "P-103", "Padeye Weld", "Max weld group equivalent stress",
+                "f_eq", "Max combined weld stress (elastic method)",
+                "f_eq = max sqrt(å^2 + ç^2) at weld group corners",
+                variables=[
+                    dict(symbol="P_x", description="Shear component (x)", value=Px, units="kip", source="step:P-060"),
+                    dict(symbol="P_y", description="Axial component (y)", value=Py, units="kip", source="step:P-061"),
+                    dict(symbol="P_z", description="Shear component (z)", value=Pz, units="kip", source="step:P-062"),
+                    dict(symbol="M_x", description="Moment about x", value=Mx, units="kip-in", source="step:P-065"),
+                    dict(symbol="M_z", description="Moment about z", value=Mz, units="kip-in", source="step:P-064"),
+                    dict(symbol="T", description="Torsion", value=T, units="kip-in", source="step:P-066"),
+                    dict(symbol="A_w", description="Weld throat area", value=Aw, units="in^2", source="step:P-098"),
+                    dict(symbol="I_xw", description="Weld group Ix", value=Ix_w, units="in^4", source="step:P-099"),
+                    dict(symbol="I_zw", description="Weld group Iz", value=Iz_w, units="in^4", source="step:P-100"),
+                    dict(symbol="J_w", description="Weld group polar inertia", value=J_w, units="in^4", source="step:P-101"),
+                    dict(symbol="W_b", description="Base width", value=inp.Wb, units="in", source="input:Wb"),
+                    dict(symbol="t", description="Plate thickness", value=inp.t, units="in", source="input:t"),
+                ],
+                compute_fn=lambda v: _max_weld_eq_stress(v),
+                units="ksi",
+                rounding_rule=dict(rule="decimals", decimals_or_sigfigs=5),
+                references=[dict(type="derived", ref="backend._solve_padeye:WeldElasticMethod")]
+            )
+
+            compute_step(
+                trace, "P-104", "Padeye Weld", "Weld utilization",
+                "U_w", "Weld utilization ratio",
+                "U_w = f_eq / F_w",
+                variables=[
+                    dict(symbol="f_eq", description="Max weld stress", value=f_eq_weld, units="ksi", source="step:P-103"),
+                    dict(symbol="F_w", description="Allowable weld stress", value=Fw_allow, units="ksi", source="step:P-102"),
+                ],
+                compute_fn=lambda v: v["f_eq"] / v["F_w"] if v["F_w"] > 0 else 1e9,
+                units="-",
+                rounding_rule=dict(rule="decimals", decimals_or_sigfigs=5),
+                references=[dict(type="derived", ref="backend._solve_padeye:WeldUtilization")],
+                checks_builder=lambda _u,_r: [dict(label="Weld Group Combined Stress", demand=f_eq_weld, capacity=Fw_allow, ratio=(f_eq_weld/Fw_allow if Fw_allow>0 else 1e9), pass_fail="PASS" if f_eq_weld <= Fw_allow else "FAIL")]
+            )
+
     # Hole region checks (boss plates included at hole, aligned to BTH sheet Pt/Pb/Pv)
     t_eff = inp.t + inp.tcheek
 
@@ -593,7 +876,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "b_e", "Actual plate edge width at pinhole",
         "b_e = (w - D_h) / 2",
         variables=[
-            dict(symbol="w", description="Width at hole", value=inp.w, units="in", source="input:w"),
+            dict(symbol="w", description="Width at hole", value=w_hole, units="in", source="step:P-062C"),
             dict(symbol="D_h", description="Hole diameter", value=inp.Dh, units="in", source="input:Dh"),
         ],
         compute_fn=lambda v: max((v["w"]-v["D_h"])/2.0, 0.0),
@@ -628,7 +911,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "A_n", "Net area at hole line (effective thickness)",
         "A_n = (w - D_h) · t_eff",
         variables=[
-            dict(symbol="w", description="Width at hole", value=inp.w, units="in", source="input:w"),
+            dict(symbol="w", description="Width at hole", value=w_hole, units="in", source="step:P-062C"),
             dict(symbol="D_h", description="Hole diameter", value=inp.Dh, units="in", source="input:Dh"),
             dict(symbol="t_eff", description="Effective thickness at hole", value=t_eff, units="in", source="input:t+tcheek"),
         ],
@@ -672,18 +955,18 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     Pb = compute_step(
         trace, "P-112", "Padeye Hole", "Allowable single-plane fracture strength",
         "P_b", "Allowable single-plane fracture strength",
-        "P_b = (F_u/(1.2·N_d)) · C_r · (1.13·(R - D_h/2) + 0.92·b_e/(1 + b_e/D_h)) · t_eff",
+        "P_b = (F_u/(1.2·N_d)) · C_r · (1.13·(R_edge - D_h/2) + 0.92·b_e/(1 + b_e/D_h)) · t_eff",
         variables=[
             dict(symbol="F_u", description="Ultimate strength", value=inp.Fu, units="ksi", source="input:Fu"),
             dict(symbol="N_d", description="Design factor", value=inp.Nd, units="-", source="input:Nd"),
             dict(symbol="C_r", description="Reduction factor", value=Cr, units="-", source="step:P-110"),
-            dict(symbol="R", description="Hole center to top edge", value=inp.R, units="in", source="input:R"),
+            dict(symbol="R_edge", description="Top edge distance", value=R_edge, units="in", source="step:P-062B"),
             dict(symbol="D_h", description="Hole diameter", value=inp.Dh, units="in", source="input:Dh"),
             dict(symbol="b_e", description="Edge width", value=be, units="in", source="step:P-108"),
             dict(symbol="t_eff", description="Effective thickness", value=t_eff, units="in", source="input:t+tcheek"),
         ],
         compute_fn=lambda v: (v["F_u"]/(1.2*v["N_d"])) * v["C_r"] * (
-            1.13*(v["R"] - v["D_h"]/2.0) + (0.92*v["b_e"]) / (1.0 + v["b_e"]/v["D_h"]) if v["D_h"]>0 else 0.0
+            1.13*(v["R_edge"] - v["D_h"]/2.0) + (0.92*v["b_e"]) / (1.0 + v["b_e"]/v["D_h"]) if v["D_h"]>0 else 0.0
         ) * v["t_eff"],
         units="kip",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=3),
@@ -693,12 +976,12 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     Z = compute_step(
         trace, "P-113", "Padeye Hole", "Shear plane length (Z)",
         "Z", "Shear plane length for splitting failure",
-        "Z = R - D_h/2",
+        "Z = R_edge - D_h/2",
         variables=[
-            dict(symbol="R", description="Hole center to top edge", value=inp.R, units="in", source="input:R"),
+            dict(symbol="R_edge", description="Top edge distance", value=R_edge, units="in", source="step:P-062B"),
             dict(symbol="D_h", description="Hole diameter", value=inp.Dh, units="in", source="input:Dh"),
         ],
-        compute_fn=lambda v: max(v["R"] - v["D_h"]/2.0, 0.0),
+        compute_fn=lambda v: max(v["R_edge"] - v["D_h"]/2.0, 0.0),
         units="in",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
         references=[dict(type="note", ref="BTH sheet uses Z from 2008 provisions; tool uses edge distance R-Dh/2")]
@@ -832,7 +1115,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "A_h", "Gross area at hole section (effective thickness)",
         "A_h = w · t_eff",
         variables=[
-            dict(symbol="w", description="Width at hole", value=inp.w, units="in", source="input:w"),
+            dict(symbol="w", description="Width at hole", value=w_hole, units="in", source="step:P-062C"),
             dict(symbol="t_eff", description="Effective thickness at hole", value=t_eff, units="in", source="input:t+tcheek"),
         ],
         compute_fn=lambda v: v["w"]*v["t_eff"],
@@ -847,7 +1130,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "S_zh = t_eff · w^2 / 6",
         variables=[
             dict(symbol="t_eff", description="Effective thickness at hole", value=t_eff, units="in", source="input:t+tcheek"),
-            dict(symbol="w", description="Width at hole", value=inp.w, units="in", source="input:w"),
+            dict(symbol="w", description="Width at hole", value=w_hole, units="in", source="step:P-062C"),
         ],
         compute_fn=lambda v: v["t_eff"]*(v["w"]**2)/6.0,
         units="in^3",
@@ -860,7 +1143,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "S_xh", "Section modulus about weak axis at hole",
         "S_xh = w · t_eff^2 / 6",
         variables=[
-            dict(symbol="w", description="Width at hole", value=inp.w, units="in", source="input:w"),
+            dict(symbol="w", description="Width at hole", value=w_hole, units="in", source="step:P-062C"),
             dict(symbol="t_eff", description="Effective thickness at hole", value=t_eff, units="in", source="input:t+tcheek"),
         ],
         compute_fn=lambda v: v["w"]*(v["t_eff"]**2)/6.0,
@@ -901,49 +1184,6 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         references=[dict(type="derived", ref="backend._solve_padeye:NetStressHole")]
     )
 
-    sigma_comb_hole = compute_step(
-        trace, "P-127", "Padeye Hole", "Combined hole + gross stress",
-        "σ_c", "Combined normal stress (pinhole + gross member)",
-        "σ_c = σ_h + σ_net",
-        variables=[
-            dict(symbol="σ_h", description="Gross normal stress at hole", value=sigma_gross_hole, units="ksi", source="step:P-125"),
-            dict(symbol="σ_net", description="Local net-section stress", value=sigma_local_net, units="ksi", source="step:P-126"),
-        ],
-        compute_fn=lambda v: v["σ_h"] + v["σ_net"],
-        units="ksi",
-        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
-        references=[dict(type="code", ref="ASME BTH-1-2023 3-3.3.2 combined with 3-2.4/3-2.5")]
-    )
-
-    Fcr_hole = compute_step(
-        trace, "P-128", "Padeye Hole", "Allowable combined stress",
-        "F_cr", "Allowable combined stress for hole-region check",
-        "F_cr = F_y / N_d",
-        variables=[
-            dict(symbol="F_y", description="Yield strength", value=inp.Fy, units="ksi", source="input:Fy"),
-            dict(symbol="N_d", description="Design factor", value=inp.Nd, units="-", source="input:Nd"),
-        ],
-        compute_fn=lambda v: v["F_y"]/v["N_d"],
-        units="ksi",
-        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
-        references=[dict(type="code", ref="ASME BTH-1-2023 Ch.3 design factor method (allowable stress form)")]
-    )
-
-    U_hole_combined = compute_step(
-        trace, "P-129", "Padeye Hole", "Combined stress utilization (hole region)",
-        "U_hc", "Combined utilization at hole region",
-        "U_hc = sqrt(σ_c^2 + 3τ^2) / F_cr",
-        variables=[
-            dict(symbol="σ_c", description="Combined normal stress", value=sigma_comb_hole, units="ksi", source="step:P-127"),
-            dict(symbol="τ", description="Shear stress (base)", value=tau, units="ksi", source="step:P-083"),
-            dict(symbol="F_cr", description="Allowable combined stress", value=Fcr_hole, units="ksi", source="step:P-128"),
-        ],
-        compute_fn=lambda v: math.sqrt(v["σ_c"]**2 + 3.0*(v["τ"]**2)) / v["F_cr"] if v["F_cr"]>0 else 1e9,
-        units="-",
-        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
-        references=[dict(type="code", ref="ASME BTH-1-2023 Ch.3 eq. (3-37)")],
-        checks_builder=lambda u,_r: [dict(label="Hole Combined Stress", demand=u, capacity=1.0, ratio=u, pass_fail="PASS" if u<=1.0 else "FAIL")]
-    )
 
     ratios=[]
     for s in trace.steps:
@@ -955,7 +1195,7 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     trace.summary = {
         "governing": {"ratio": gov[0], "step_id": gov[1], "check": gov[2]},
-        "note": "Padeye includes base combined stress (incl. out-of-plane) and hole-region rupture/bearing/tear-out with boss plates included in effective thickness."
+        "note": "Padeye includes base combined stress (incl. out-of-plane), weld group elastic method (when applicable), and hole-region rupture/bearing/tear-out with boss plates included in effective thickness."
     }
     trace.tables = {"hole": {"t_eff": t_eff, "be": be, "beff": beff, "Cr": Cr, "Pt": Pt, "Pb": Pb, "Pv": Pv}}
 
@@ -970,7 +1210,224 @@ def _solve_padeye(inp: PadeyeInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         },
         "tables": trace.tables,
         "checks": _collect_checks(trace),
-        "warnings": []
+        "warnings": weld_warnings
+    }
+    return trace.to_dict(), results
+
+def _solve_spreader_two_way(inp: SpreaderTwoWayInputs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    inp = _apply_design_category(inp)
+    d = inp.model_dump()
+    trace = _base_trace(d)
+    warnings: list[str] = []
+
+    shapes = _get_shapes()
+    shp = shapes.get(inp.shape)
+    if shp is None:
+        raise ValueError(f"Shape not found in bundled AISC database: {inp.shape}")
+    shape_type = (shp.type_code or "").strip().upper()
+    if shape_type not in _ALLOWED_SPREADER_TYPES:
+        raise ValueError(f"Shape type {shape_type} is not supported for spreader analysis.")
+
+    w_kipft = (shp.W_lbft or 0.0) / 1000.0
+    depth_in = shp.d_in or shp.H_in or shp.OD_in or shp.B_in or 0.0
+
+    x_left = inp.padeye_edge_ft
+    x_right = inp.length_ft - inp.padeye_edge_ft
+    support_spacing = x_right - x_left
+
+    beam_solver = _load_beam_solver()
+    point_loads = [{"x_ft": pl.x_ft, "P_kip": pl.P_kip} for pl in inp.point_loads]
+    beam = beam_solver.solve_simple_beam(
+        total_length_ft=inp.length_ft,
+        support_positions_ft=[x_left, x_right],
+        point_loads_kip=point_loads,
+        w_kipft=w_kipft,
+    )
+
+    def _reaction_at(x_target: float) -> float:
+        reactions = beam.get("reactions_kip", [])
+        if not reactions:
+            return 0.0
+        closest = min(reactions, key=lambda r: abs(r["x_ft"] - x_target))
+        return float(closest["reaction_kip"])
+
+    R_left = _reaction_at(x_left)
+    R_right = _reaction_at(x_right)
+
+    total_load = sum(pl.P_kip for pl in inp.point_loads) + w_kipft * inp.length_ft
+    if total_load <= 0:
+        warnings.append("Total vertical load is zero; CG and sling geometry assumed at midspan.")
+        x_cg = inp.length_ft / 2.0
+    else:
+        moment = sum(pl.P_kip * pl.x_ft for pl in inp.point_loads) + (w_kipft * inp.length_ft) * (inp.length_ft / 2.0)
+        x_cg = moment / total_load
+
+    d_left = abs(x_cg - x_left)
+    d_right = abs(x_right - x_cg)
+    d_long = max(d_left, d_right)
+    if d_long <= 1e-9:
+        warnings.append("Load CG aligns with padeye; sling geometry assumed vertical.")
+
+    sling_angle_rad = math.radians(inp.sling_angle_deg)
+    hook_height = d_long * math.tan(sling_angle_rad) if d_long > 0 else 0.0
+
+    def _angle_from_horizontal(dist: float) -> float:
+        if dist <= 0 and hook_height <= 0:
+            return 90.0
+        return math.degrees(math.atan2(hook_height, dist if dist > 0 else 1e-9))
+
+    angle_left = _angle_from_horizontal(d_left)
+    angle_right = _angle_from_horizontal(d_right)
+
+    sling_len_left = math.hypot(hook_height, d_left)
+    sling_len_right = math.hypot(hook_height, d_right)
+
+    def _sling_tension(R: float, angle_deg: float, label: str) -> tuple[float, float]:
+        if R <= 0:
+            warnings.append(f"{label} padeye vertical reaction is non-positive; sling tension set to 0.")
+            return 0.0, 0.0
+        sin_a = math.sin(math.radians(angle_deg))
+        if sin_a <= 1e-6:
+            warnings.append(f"{label} sling angle too shallow; tension set to 0.")
+            return 0.0, 0.0
+        T = R / sin_a
+        H = T * math.cos(math.radians(angle_deg))
+        return T, H
+
+    T_left, H_left = _sling_tension(R_left, angle_left, "Left")
+    T_right, H_right = _sling_tension(R_right, angle_right, "Right")
+
+    axial = 0.5 * (abs(H_left) + abs(H_right))
+    Mecc = axial * (depth_in / 2.0 + inp.padeye_height_in) / 12.0 if depth_in > 0 else 0.0
+
+    max_shear = float(beam.get("max_shear_kip", 0.0))
+    max_moment = float(beam.get("max_moment_kipft", 0.0))
+    max_moment_total = max_moment + Mecc
+
+    compute_step(
+        trace, "T-010", "Spreader Two-way", "Support spacing",
+        "L_s", "Distance between padeyes",
+        "L_s = L - 2 a",
+        variables=[
+            dict(symbol="L", description="Total beam length", value=inp.length_ft, units="ft", source="input:length_ft"),
+            dict(symbol="a", description="Edge to padeye distance", value=inp.padeye_edge_ft, units="ft", source="input:padeye_edge_ft"),
+        ],
+        compute_fn=lambda v: v["L"] - 2.0 * v["a"],
+        units="ft",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_spreader_two_way:SupportSpacing")]
+    )
+
+    compute_step(
+        trace, "T-011", "Spreader Two-way", "Total vertical load",
+        "W", "Total vertical load including self-weight",
+        "W = sum(P_i) + w L",
+        variables=[
+            dict(symbol="sum(P_i)", description="Total point loads", value=sum(pl.P_kip for pl in inp.point_loads), units="kip", source="input:point_loads"),
+            dict(symbol="w", description="Self-weight per length", value=w_kipft, units="kip/ft", source="db:aisc.W_lbft"),
+            dict(symbol="L", description="Total beam length", value=inp.length_ft, units="ft", source="input:length_ft"),
+        ],
+        compute_fn=lambda v: v["sum(P_i)"] + v["w"] * v["L"],
+        units="kip",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_spreader_two_way:TotalLoad")]
+    )
+
+    compute_step(
+        trace, "T-012", "Spreader Two-way", "Load centroid",
+        "x_cg", "Resultant load location from left end",
+        "x_cg = sum(P_i x_i) / W",
+        variables=[
+            dict(symbol="sum(P_i x_i)", description="First moment of loads", value=(sum(pl.P_kip * pl.x_ft for pl in inp.point_loads) + (w_kipft * inp.length_ft) * (inp.length_ft / 2.0)), units="kip-ft", source="derived"),
+            dict(symbol="W", description="Total load", value=total_load if total_load > 0 else 1.0, units="kip", source="step:T-011"),
+        ],
+        compute_fn=lambda v: v["sum(P_i x_i)"] / v["W"] if total_load > 0 else inp.length_ft / 2.0,
+        units="ft",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_spreader_two_way:LoadCentroid")]
+    )
+
+    compute_step(
+        trace, "T-013", "Spreader Two-way", "Padeye reactions",
+        "R", "Vertical reactions at padeyes",
+        "R = beam_solver(...)",
+        variables=[
+            dict(symbol="R_left", description="Left reaction", value=R_left, units="kip", source="beam_solver"),
+            dict(symbol="R_right", description="Right reaction", value=R_right, units="kip", source="beam_solver"),
+        ],
+        compute_fn=lambda v: v["R_left"] + v["R_right"],
+        units="kip",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="note", ref="Reactions computed via beam_solver with supports at padeyes.")],
+    )
+
+    compute_step(
+        trace, "T-014", "Spreader Two-way", "Hook height from sling angle",
+        "h", "Vertical rise from padeye to hook",
+        "h = d_long * tan(α_min)",
+        variables=[
+            dict(symbol="d_long", description="Long sling horizontal distance", value=d_long, units="ft", source="derived"),
+            dict(symbol="α_min", description="Minimum sling angle", value=inp.sling_angle_deg, units="deg", source="input:sling_angle_deg"),
+        ],
+        compute_fn=lambda v: v["d_long"] * math.tan(math.radians(v["α_min"])) if v["d_long"] > 0 else 0.0,
+        units="ft",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_spreader_two_way:HookHeight")]
+    )
+
+    compute_step(
+        trace, "T-015", "Spreader Two-way", "Sling tensions and axial compression",
+        "T", "Sling tensions and horizontal components",
+        "T = R / sin(α)",
+        variables=[
+            dict(symbol="T_left", description="Left sling tension", value=T_left, units="kip", source="derived"),
+            dict(symbol="T_right", description="Right sling tension", value=T_right, units="kip", source="derived"),
+            dict(symbol="H_left", description="Left horizontal component", value=H_left, units="kip", source="derived"),
+            dict(symbol="H_right", description="Right horizontal component", value=H_right, units="kip", source="derived"),
+        ],
+        compute_fn=lambda v: v["T_left"] + v["T_right"],
+        units="kip",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_spreader_two_way:SlingTensionFromAngles")]
+    )
+
+    trace.summary = {
+        "note": "Two-way spreader uses a simply supported beam model with overhangs at padeyes, vertical reactions from beam_solver, sling geometry based on CG alignment, and axial compression from sling horizontal components."
+    }
+    trace.tables = {
+        "two_way": {
+            "beam_length_ft": inp.length_ft,
+            "padeye_edge_ft": inp.padeye_edge_ft,
+            "padeye_spacing_ft": support_spacing,
+            "shape": inp.shape,
+            "shape_depth_in": depth_in,
+            "self_weight_kipft": w_kipft,
+            "point_loads": [pl.model_dump() for pl in inp.point_loads],
+            "beam_solver": beam,
+        }
+    }
+
+    results = {
+        "key_outputs": {
+            "support_spacing": {"value": support_spacing, "units":"ft"},
+            "total_load": {"value": total_load, "units":"kip"},
+            "cg_x": {"value": x_cg, "units":"ft"},
+            "R_left": {"value": R_left, "units":"kip"},
+            "R_right": {"value": R_right, "units":"kip"},
+            "sling_angle_left": {"value": angle_left, "units":"deg"},
+            "sling_angle_right": {"value": angle_right, "units":"deg"},
+            "sling_length_left": {"value": sling_len_left, "units":"ft"},
+            "sling_length_right": {"value": sling_len_right, "units":"ft"},
+            "sling_tension_left": {"value": T_left, "units":"kip"},
+            "sling_tension_right": {"value": T_right, "units":"kip"},
+            "axial_compression": {"value": axial, "units":"kip"},
+            "max_shear": {"value": max_shear, "units":"kip"},
+            "max_moment": {"value": max_moment, "units":"kip-ft"},
+            "max_moment_total": {"value": max_moment_total, "units":"kip-ft"},
+        },
+        "tables": trace.tables,
+        "checks": [],
+        "warnings": warnings,
     }
     return trace.to_dict(), results
 
@@ -979,22 +1436,50 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
     d = inp.model_dump()
     trace = _base_trace(d)
 
-    shp = SHAPES.get(inp.shape)
+    shapes = _get_shapes()
+    shp = shapes.get(inp.shape)
     if shp is None:
         raise ValueError(f"Shape not found in bundled AISC database: {inp.shape}")
-    shape_type = (shp.shape_type or "").strip().upper()
+    shape_type = (shp.type_code or "").strip().upper()
     if shape_type == "L":
         raise ValueError("Single angles (L) are not supported for spreader checks.")
 
+    depth_in = shp.d_in or shp.H_in or shp.OD_in or shp.B_in or 0.0
+
+    d_shape = compute_step(
+        trace, "S-005", "Spreader Geometry", "Section depth used for eccentricity",
+        "d", "Section depth used for eccentric axial moment",
+        "d = d_section",
+        variables=[dict(symbol="d_section", description="Section depth (AISC)", value=depth_in, units="in", source="db:aisc.depth")],
+        compute_fn=lambda v: v["d_section"],
+        units="in",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_spreader:SectionDepthFallback")]
+    )
+
+    e_total = compute_step(
+        trace, "S-006", "Spreader Geometry", "Total eccentricity to axial load",
+        "e", "Total eccentricity from centroid",
+        "e = e_y + d/2",
+        variables=[
+            dict(symbol="e_y", description="Top padeye height", value=inp.ey, units="in", source="input:ey"),
+            dict(symbol="d", description="Section depth", value=d_shape, units="in", source="step:S-005"),
+        ],
+        compute_fn=lambda v: v["e_y"] + v["d"] / 2.0,
+        units="in",
+        rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+        references=[dict(type="derived", ref="backend._solve_spreader:TotalEccentricity")]
+    )
+
     L = inp.span_L_ft
-    w_kip_per_ft = (shp.W/1000.0) if inp.include_self_weight else 0.0
+    w_kip_per_ft = ((shp.W_lbft or 0.0)/1000.0) if inp.include_self_weight else 0.0
 
     Msw = compute_step(
         trace, "S-010", "Spreader Loads", "Self-weight moment (strong axis)",
         "M_sw", "Midspan moment from uniform self-weight (simply supported)",
         "M_sw = w · L^2 / 8",
         variables=[
-            dict(symbol="w", description="Member self-weight per length", value=w_kip_per_ft, units="kip/ft", source="db:aisc.W"),
+            dict(symbol="w", description="Member self-weight per length", value=w_kip_per_ft, units="kip/ft", source="db:aisc.W_lbft"),
             dict(symbol="L", description="Span between supports", value=L, units="ft", source="input:span_L_ft"),
         ],
         compute_fn=lambda v: v["w"]*(v["L"]**2)/8.0,
@@ -1003,19 +1488,48 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         references=[dict(type="derived", ref="backend._solve_spreader:SelfWeightMomentSS")]
     )
 
-    Mx_tot = compute_step(
-        trace, "S-011", "Spreader Loads", "Total strong-axis moment",
-        "M_x", "Total strong-axis moment = applied + self-weight",
-        "M_x = M_x_app + M_sw",
+    Mecc = compute_step(
+        trace, "S-011A", "Spreader Loads", "Eccentric axial load moment",
+        "M_e", "Moment from axial load eccentricity",
+        "M_e = P ú e / 12",
         variables=[
-            dict(symbol="M_x_app", description="Applied strong-axis end moment", value=inp.Mx_app_kipft, units="kip-ft", source="input:Mx_app_kipft"),
-            dict(symbol="M_sw", description="Self-weight moment", value=Msw, units="kip-ft", source="step:S-010"),
+            dict(symbol="P", description="Axial compression", value=inp.P_kip, units="kip", source="input:P_kip"),
+            dict(symbol="e", description="Total eccentricity", value=e_total, units="in", source="step:S-006"),
         ],
-        compute_fn=lambda v: v["M_x_app"]+v["M_sw"],
+        compute_fn=lambda v: (v["P"] * v["e"]) / 12.0,
         units="kip-ft",
         rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
-        references=[dict(type="derived", ref="backend._solve_spreader:TotalStrongAxisMoment")]
+        references=[dict(type="derived", ref="backend._solve_spreader:EccentricAxialMoment")]
     )
+
+    if inp.mx_includes_total:
+        Mx_tot = compute_step(
+            trace, "S-011", "Spreader Loads", "Total strong-axis moment",
+            "M_x", "Total strong-axis moment (user-provided)",
+            "M_x = M_x_app",
+            variables=[
+                dict(symbol="M_x_app", description="Applied strong-axis end moment", value=inp.Mx_app_kipft, units="kip-ft", source="input:Mx_app_kipft"),
+            ],
+            compute_fn=lambda v: v["M_x_app"],
+            units="kip-ft",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+            references=[dict(type="derived", ref="backend._solve_spreader:TotalStrongAxisMomentUserProvided")]
+        )
+    else:
+        Mx_tot = compute_step(
+            trace, "S-011", "Spreader Loads", "Total strong-axis moment",
+            "M_x", "Total strong-axis moment = applied + self-weight + eccentric axial",
+            "M_x = M_x_app + M_sw + M_e",
+            variables=[
+                dict(symbol="M_x_app", description="Applied strong-axis end moment", value=inp.Mx_app_kipft, units="kip-ft", source="input:Mx_app_kipft"),
+                dict(symbol="M_sw", description="Self-weight moment", value=Msw, units="kip-ft", source="step:S-010"),
+                dict(symbol="M_e", description="Eccentric axial moment", value=Mecc, units="kip-ft", source="step:S-011A"),
+            ],
+            compute_fn=lambda v: v["M_x_app"]+v["M_sw"]+v["M_e"],
+            units="kip-ft",
+            rounding_rule=dict(rule="decimals", decimals_or_sigfigs=4),
+            references=[dict(type="derived", ref="backend._solve_spreader:TotalStrongAxisMomentWithEccentricity")]
+        )
 
     My_tot = compute_step(
         trace, "S-012", "Spreader Loads", "Total weak-axis moment",
@@ -1034,7 +1548,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         "f_bx = M_x · 12 / S_x",
         variables=[
             dict(symbol="M_x", description="Total strong-axis moment", value=Mx_tot, units="kip-ft", source="step:S-011"),
-            dict(symbol="S_x", description="Strong-axis elastic section modulus", value=shp.Sx, units="in^3", source="db:aisc.Sx"),
+            dict(symbol="S_x", description="Strong-axis elastic section modulus", value=shp.Sx_in3, units="in^3", source="db:aisc.Sx_in3"),
         ],
         compute_fn=lambda v: (v["M_x"]*12.0)/v["S_x"] if v["S_x"]>0 else 0.0,
         units="ksi",
@@ -1048,7 +1562,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         "f_by = M_y · 12 / S_y",
         variables=[
             dict(symbol="M_y", description="Total weak-axis moment", value=My_tot, units="kip-ft", source="step:S-012"),
-            dict(symbol="S_y", description="Weak-axis elastic section modulus", value=shp.Sy, units="in^3", source="db:aisc.Sy"),
+            dict(symbol="S_y", description="Weak-axis elastic section modulus", value=shp.Sy_in3, units="in^3", source="db:aisc.Sy_in3"),
         ],
         compute_fn=lambda v: (v["M_y"]*12.0)/v["S_y"] if v["S_y"]>0 else 0.0,
         units="ksi",
@@ -1062,7 +1576,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         "f_a = P / A",
         variables=[
             dict(symbol="P", description="Axial compression", value=inp.P_kip, units="kip", source="input:P_kip"),
-            dict(symbol="A", description="Area", value=shp.A, units="in^2", source="db:aisc.A"),
+            dict(symbol="A", description="Area", value=shp.A_in2, units="in^2", source="db:aisc.A_in2"),
         ],
         compute_fn=lambda v: v["P"]/v["A"] if v["A"]>0 else 0.0,
         units="ksi",
@@ -1076,7 +1590,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         "f_v = V / A",
         variables=[
             dict(symbol="V", description="Shear force", value=inp.V_kip, units="kip", source="input:V_kip"),
-            dict(symbol="A", description="Area", value=shp.A, units="in^2", source="db:aisc.A"),
+            dict(symbol="A", description="Area", value=shp.A_in2, units="in^2", source="db:aisc.A_in2"),
         ],
         compute_fn=lambda v: v["V"]/v["A"] if v["A"]>0 else 0.0,
         units="ksi",
@@ -1092,8 +1606,8 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
     "A_f", "Compression flange area (rectangular flange approximation)",
     "A_f = b_f · t_f",
     variables=[
-        dict(symbol="b_f", description="Flange width", value=shp.bf, units="in", source="db:aisc.bf"),
-        dict(symbol="t_f", description="Flange thickness", value=shp.tf, units="in", source="db:aisc.tf"),
+        dict(symbol="b_f", description="Flange width", value=shp.bf_in or 0.0, units="in", source="db:aisc.bf_in"),
+        dict(symbol="t_f", description="Flange thickness", value=shp.tf_in or 0.0, units="in", source="db:aisc.tf_in"),
     ],
     compute_fn=lambda v: v["b_f"]*v["t_f"],
     units="in^2",
@@ -1105,7 +1619,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
     trace, "S-027", "Spreader Allowables", "r_T approximation for LTB",
     "r_T", "Radius of gyration for compression flange + 1/3 web area (approximated)",
     "r_T ≈ r_y",
-    variables=[dict(symbol="r_y", description="Minor-axis radius of gyration", value=shp.ry, units="in", source="db:aisc.ry")],
+    variables=[dict(symbol="r_y", description="Minor-axis radius of gyration", value=shp.ry_in, units="in", source="db:aisc.ry_in")],
     compute_fn=lambda v: v["r_y"],
     units="in",
     rounding_rule=dict(rule="decimals", decimals_or_sigfigs=5),
@@ -1119,11 +1633,11 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
     variables=[
         dict(symbol="braced", description="Braced against twist at ends of unbraced length", value=1 if inp.braced_against_twist else 0, units="-", source="input:braced_against_twist"),
         dict(symbol="E", description="Elastic modulus", value=29000.0, units="ksi", source="assumption:E=29000ksi"),
-        dict(symbol="I_y", description="Minor-axis moment of inertia", value=shp.Iy, units="in^4", source="db:aisc.Iy"),
+        dict(symbol="I_y", description="Minor-axis moment of inertia", value=shp.Iy_in4, units="in^4", source="db:aisc.Iy_in4"),
         dict(symbol="G", description="Shear modulus", value=11200.0, units="ksi", source="assumption:G=11200ksi"),
-        dict(symbol="J", description="Torsional constant", value=shp.J, units="in^4", source="db:aisc.J"),
-        dict(symbol="H", description="H parameter from AISC database", value=shp.H, units="in", source="db:aisc.H"),
-        dict(symbol="b_f", description="Flange width", value=shp.bf, units="in", source="db:aisc.bf"),
+        dict(symbol="J", description="Torsional constant", value=shp.J_in4 or 0.0, units="in^4", source="db:aisc.J_in4"),
+        dict(symbol="H", description="H parameter from AISC database", value=shp.H_const or 0.0, units="in", source="db:aisc.H"),
+        dict(symbol="b_f", description="Flange width", value=shp.bf_in or 0.0, units="in", source="db:aisc.bf_in"),
     ],
     compute_fn=lambda v: 1.0 if v["braced"]==1 else min(1.0, (2.0*((v["E"]*v["I_y"])/(v["G"]*v["J"])) * ((v["b_f"]/v["H"])**2) + 0.275) if (v["J"]>0 and v["H"]>0) else 1.0),
     units="-",
@@ -1159,7 +1673,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         dict(symbol="C_b", description="Bending coefficient", value=inp.Cb, units="-", source="input:Cb"),
         dict(symbol="N_d", description="Design factor", value=inp.Nd, units="-", source="input:Nd"),
         dict(symbol="L_b", description="Unbraced length", value=inp.Lb_ft*12.0, units="in", source="input:Lb_ft"),
-        dict(symbol="d", description="Section depth", value=shp.d, units="in", source="db:aisc.d"),
+        dict(symbol="d", description="Section depth", value=shp.d_in or 0.0, units="in", source="db:aisc.d_in"),
         dict(symbol="A_f", description="Compression flange area (approx.)", value=Af, units="in^2", source="step:S-026"),
     ],
     compute_fn=lambda v: min(v["F_y"]/v["N_d"], (0.66*v["E"]*v["C_b"]/(v["N_d"]*((v["L_b"]*v["d"]/v["A_f"]) if v["A_f"]>0 else 1e99)))),
@@ -1253,7 +1767,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
     "KLr = KL / r_min",
     variables=[
         dict(symbol="KL", description="Effective length", value=KLx, units="in", source="input:KL_ft"),
-        dict(symbol="r_min", description="Minimum radius of gyration", value=min(shp.rx, shp.ry), units="in", source="db:aisc"),
+        dict(symbol="r_min", description="Minimum radius of gyration", value=min(shp.rx_in, shp.ry_in), units="in", source="db:aisc"),
     ],
     compute_fn=lambda v: v["KL"]/v["r_min"] if v["r_min"]>0 else 1e99,
     units="-",
@@ -1291,7 +1805,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         dict(symbol="E", description="Elastic modulus", value=29000.0, units="ksi", source="assumption:E=29000ksi"),
         dict(symbol="N_d", description="Design factor", value=inp.Nd, units="-", source="input:Nd"),
         dict(symbol="KL", description="Effective length", value=KLx, units="in", source="input:KL_ft"),
-        dict(symbol="r_x", description="Radius of gyration about x", value=shp.rx, units="in", source="db:aisc.rx"),
+        dict(symbol="r_x", description="Radius of gyration about x", value=shp.rx_in, units="in", source="db:aisc.rx_in"),
     ],
     compute_fn=lambda v: (math.pi**2)*v["E"]/(v["N_d"]*((v["KL"]/v["r_x"])**2)) if v["r_x"]>0 else 0.0,
     units="ksi",
@@ -1307,7 +1821,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         dict(symbol="E", description="Elastic modulus", value=29000.0, units="ksi", source="assumption:E=29000ksi"),
         dict(symbol="N_d", description="Design factor", value=inp.Nd, units="-", source="input:Nd"),
         dict(symbol="KL", description="Effective length", value=KLx, units="in", source="input:KL_ft"),
-        dict(symbol="r_y", description="Radius of gyration about y", value=shp.ry, units="in", source="db:aisc.ry"),
+        dict(symbol="r_y", description="Radius of gyration about y", value=shp.ry_in, units="in", source="db:aisc.ry_in"),
     ],
     compute_fn=lambda v: (math.pi**2)*v["E"]/(v["N_d"]*((v["KL"]/v["r_y"])**2)) if v["r_y"]>0 else 0.0,
     units="ksi",
@@ -1553,7 +2067,7 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
         "note": "Spreader includes self-weight moment, ASME BTH-1-2023 lateral-torsional buckling allowables (eqs. 3-16/3-17), combined axial compression + biaxial bending interaction (eqs. 3-29/3-31), compression allowables (eqs. 3-4/3-5), shear check, and optional weld sizing (direct shear+axial)."
     }
     trace.tables = {"shape_props": {
-        "name": shp.name, "type": shp.shape_type, "A": shp.A, "W_lbft": shp.W, "d": shp.d, "bf": shp.bf, "tf": shp.tf, "tw": shp.tw, "Sx": shp.Sx, "Sy": shp.Sy, "Ix": shp.Ix, "Iy": shp.Iy, "J": shp.J, "H": shp.H, "rx": shp.rx, "ry": shp.ry
+        "name": shp.label, "type": shp.type_code, "A": shp.A_in2, "W_lbft": shp.W_lbft, "d": shp.d_in, "bf": shp.bf_in, "tf": shp.tf_in, "tw": shp.tw_in, "Sx": shp.Sx_in3, "Sy": shp.Sy_in3, "Ix": shp.Ix_in4, "Iy": shp.Iy_in4, "J": shp.J_in4, "H": shp.H_const, "rx": shp.rx_in, "ry": shp.ry_in
     }}
 
     results = {
@@ -1603,7 +2117,7 @@ class Handler(SimpleHTTPRequestHandler):
             if u.path == "/api/health":
                 return self._send_json({"ok": True, "tool": TOOL_ID, "version": TOOL_VERSION})
             if u.path == "/api/shackles":
-                return self._send_json({"ok": True, "items": _get_shackles()})
+                return self._send_json({"ok": True, "items": get_shackles()})
             if u.path == "/api/report.html":
                 qs = parse_qs(u.query or "")
                 mode = _mode_from_query(qs) or LAST_MODE
@@ -1645,8 +2159,10 @@ class Handler(SimpleHTTPRequestHandler):
                 qs = parse_qs(u.query or "")
                 q = (qs.get("q") or [""])[0]
                 limit = int((qs.get("limit") or ["50"])[0])
-                hits = search_shapes(SHAPES, q, limit=limit)
-                return self._send_json({"ok": True, "items": [{"name": s.name, "type": s.shape_type, "W_lbft": s.W} for s in hits]})
+                hits = _search_shapes(_get_shapes(), q, limit=limit)
+                return self._send_json({"ok": True, "items": [{"name": s.label, "type": s.type_code, "W_lbft": s.W_lbft} for s in hits]})
+            if u.path == "/api/spreader_shapes":
+                return self._send_json({"ok": True, "items": _get_spreader_shapes()})
             return super().do_GET()
         except Exception as e:
             return self._send_json({"ok": False, "error": str(e)}, 500)
@@ -1688,20 +2204,22 @@ class Handler(SimpleHTTPRequestHandler):
                 base = dict(payload)
                 base["mode"] = "spreader"
                 unique_shapes = {}
-                for shp in SHAPES.values():
-                    unique_shapes[shp.name] = shp
+                for shp in _get_shapes().values():
+                    unique_shapes[shp.label] = shp
 
                 best = None
                 best_results = None
                 checked = 0
                 passed = 0
                 for shp in unique_shapes.values():
-                    shape_type = (shp.shape_type or "").strip().upper()
+                    shape_type = (shp.type_code or "").strip().upper()
                     if shape_type == "L":
+                        continue
+                    if shape_type not in _ALLOWED_SPREADER_TYPES:
                         continue
                     checked += 1
                     try:
-                        base["shape"] = shp.name
+                        base["shape"] = shp.label
                         inp = SpreaderInputs(**base)
                         _trace, results = _solve_spreader(inp)
                         ratio = results["key_outputs"]["governing_ratio"]["value"]
@@ -1710,10 +2228,10 @@ class Handler(SimpleHTTPRequestHandler):
                         if float(ratio) > 1.0:
                             continue
                         passed += 1
-                        weight = float(shp.W)
+                        weight = float(shp.W_lbft or 0.0)
                         if best is None or weight < best["weight_lbft"]:
                             best = {
-                                "shape": shp.name,
+                                "shape": shp.label,
                                 "weight_lbft": weight,
                                 "governing_ratio": float(ratio),
                             }
@@ -1739,8 +2257,11 @@ class Handler(SimpleHTTPRequestHandler):
             elif mode == "spreader":
                 inp = SpreaderInputs(**payload)
                 trace, results = _solve_spreader(inp)
+            elif mode == "spreader_two_way":
+                inp = SpreaderTwoWayInputs(**payload)
+                trace, results = _solve_spreader_two_way(inp)
             else:
-                return self._send_json({"ok": False, "error": "mode must be padeye or spreader"}, 400)
+                return self._send_json({"ok": False, "error": "mode must be padeye, spreader, or spreader_two_way"}, 400)
 
             global LAST_MODE
             LAST_MODE = mode
