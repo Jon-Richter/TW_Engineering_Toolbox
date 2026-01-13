@@ -26,7 +26,12 @@ def _user_override_db_path() -> Optional[Path]:
 
 
 def _canonical(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", s.strip().lower())
+    if not s:
+        return ""
+    raw = s.strip().lower()
+    # Preserve numeric fractions so 1/2 doesn't collide with 12.
+    raw = re.sub(r"(\d)\s*/\s*(\d)", r"\1p\2", raw)
+    return re.sub(r"[^a-z0-9]+", "", raw)
 
 
 def _label_sort_key(label: str, type_code: str) -> tuple:
@@ -73,6 +78,7 @@ class Shape:
 
     # Basic section properties (AISC database units assumed)
     A_in2: float
+    W_lbft: Optional[float]
     Ix_in4: float
     Iy_in4: float
     Sx_in3: float
@@ -145,6 +151,7 @@ class Shape:
             "label": self.label,
             "type_code": self.type_code,
             "A_in2": self.A_in2,
+            "W_lbft": self.W_lbft,
             "Ix_in4": self.Ix_in4,
             "Iy_in4": self.Iy_in4,
             "Sx_in3": self.Sx_in3,
@@ -321,6 +328,7 @@ class ShapeDatabase:
 
         # Required
         A = f("A", "A_in2", "Area", required=True)
+        W = f("W", "WGT", "WEIGHT", "W_lbft", required=False)
         Ix = f("Ix", "I_x", "Ix_in4", required=True)
         Iy = f("Iy", "I_y", "Iy_in4", required=True)
         Sx = f("Sx", "S_x", "Sx_in3", required=True)
@@ -362,6 +370,7 @@ class ShapeDatabase:
             label=shp_label,
             type_code=type_code,
             A_in2=A,
+            W_lbft=W,
             Ix_in4=Ix,
             Iy_in4=Iy,
             Sx_in3=Sx,

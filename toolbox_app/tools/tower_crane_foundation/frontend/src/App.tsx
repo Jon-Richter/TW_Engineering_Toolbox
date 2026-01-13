@@ -29,6 +29,48 @@ const parseNumber = (value: string) => {
   const num = Number(s);
   return Number.isFinite(num) ? num : 0;
 };
+type NumberInputProps = {
+  value: number;
+  onChange: (value: number) => void;
+  className?: string;
+  disabled?: boolean;
+};
+
+function NumberInput({ value, onChange, className, disabled = false }: NumberInputProps) {
+  const [draft, setDraft] = useState(() => (Number.isFinite(value) ? String(value) : ""));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (focused) return;
+    if (draft === "" && Number.isFinite(value) && value === 0) return;
+    if (!Number.isFinite(value)) {
+      setDraft("");
+      return;
+    }
+    setDraft(String(value));
+  }, [value, focused]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={className}
+      value={draft}
+      onChange={(e) => {
+        const next = e.target.value;
+        setDraft(next);
+        if (!next.trim()) {
+          onChange(0);
+          return;
+        }
+        onChange(parseNumber(next));
+      }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      disabled={disabled}
+    />
+  );
+}
 const toInput = (value: number, d = 2) => (Number.isFinite(value) ? Number(value.toFixed(d)).toString() : "");
 const fmt = (x: number, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : "-");
 const fmt0 = (x: number) => (Number.isFinite(x) ? Math.round(x).toString() : "-");
@@ -591,10 +633,10 @@ export default function App() {
                     </label>
                     <label className="text-xs text-slate-300">
                       qa (psf)
-                      <input
+                      <NumberInput
                         className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
                         value={qa}
-                        onChange={(e) => setQa(parseNumber(e.target.value))}
+                        onChange={setQa}
                       />
                     </label>
                     <label className="text-xs text-slate-300">
@@ -623,26 +665,26 @@ export default function App() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <label className="text-xs text-slate-300">
                       mu
-                      <input
+                      <NumberInput
                         className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
                         value={mu}
-                        onChange={(e) => setMu(parseNumber(e.target.value))}
+                        onChange={setMu}
                       />
                     </label>
                     <label className="text-xs text-slate-300">
                       FSreq
-                      <input
+                      <NumberInput
                         className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
                         value={FSslide}
-                        onChange={(e) => setFSslide(parseNumber(e.target.value))}
+                        onChange={setFSslide}
                       />
                     </label>
                     <label className="text-xs text-slate-300 col-span-2 sm:col-span-1">
                       Grid n (default 40)
-                      <input
+                      <NumberInput
                         className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
                         value={gridN}
-                        onChange={(e) => setGridN(Math.max(10, Math.floor(parseNumber(e.target.value))))}
+                        onChange={(value) => setGridN(Math.max(10, Math.floor(value)))}
                       />
                     </label>
                   </div>
@@ -654,26 +696,26 @@ export default function App() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <label className="text-xs text-slate-300">
                       f&apos;c (psi)
-                      <input
+                      <NumberInput
                         className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
                         value={fc}
-                        onChange={(e) => setFc(parseNumber(e.target.value))}
+                        onChange={setFc}
                       />
                     </label>
                     <label className="text-xs text-slate-300">
                       fy (ksi)
-                      <input
+                      <NumberInput
                         className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
                         value={fy}
-                        onChange={(e) => setFy(parseNumber(e.target.value))}
+                        onChange={setFy}
                       />
                     </label>
                     <label className="text-xs text-slate-300">
                       cover (in)
-                      <input
+                      <NumberInput
                         className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
                         value={cover}
-                        onChange={(e) => setCover(parseNumber(e.target.value))}
+                        onChange={setCover}
                       />
                     </label>
                     {!isRectangular ? (

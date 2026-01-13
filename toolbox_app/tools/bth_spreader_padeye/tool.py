@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json, os, sys, time, socket, subprocess, threading
 from dataclasses import dataclass
-from typing import Literal
+from typing import Callable, Literal
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -203,6 +203,25 @@ class _Tool:
 </html>"""
         return loader_html, target_url
 
+    def _terminate_server(self) -> None:
+        if self._proc and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+                self._proc.wait(timeout=2.0)
+            except Exception:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+        self._proc = None
+        self._base_url = None
+        if self._log_fp is not None:
+            try:
+                self._log_fp.close()
+            except Exception:
+                pass
+            self._log_fp = None
+
     def _open_window(self, base: str, mode: str) -> None:
         loader_html, target_url = self._build_loader_html(base, mode)
         try:
@@ -211,7 +230,7 @@ class _Tool:
                 webbrowser.open(target_url)
                 return
             if self._window is None or not self._window.isVisible():
-                self._window = _WebWindow(self.meta.name)
+                self._window = _WebWindow(self.meta.name, on_close=self._terminate_server)
             self._window.load(loader_html, base)
             self._window.show()
             self._window.raise_()
@@ -228,6 +247,7 @@ class _Tool:
             webbrowser.open(target_url)
 
     def run(self, inputs: dict) -> dict:
+        self._terminate_server()
         run_dir=str(create_run_dir(TOOL_ID, inputs))
         self._last_run_dir = run_dir
         mode = str(inputs.get("mode") or "padeye")
@@ -263,11 +283,12 @@ TOOL=_Tool()
 
 if QMainWindow is not None:
     class _WebWindow(QMainWindow):
-        def __init__(self, title: str) -> None:
+        def __init__(self, title: str, on_close: Callable[[], None] | None = None) -> None:
             super().__init__()
             self.setWindowTitle(title)
             self.resize(1200, 850)
             self._web = QWebEngineView()
+            self._on_close = on_close
             central = QWidget()
             layout = QVBoxLayout(central)
             layout.setContentsMargins(0, 0, 0, 0)
@@ -276,9 +297,14 @@ if QMainWindow is not None:
 
         def load(self, loader_html: str, base_url: str) -> None:
             self._web.setHtml(loader_html, QUrl(base_url.rstrip("/") + "/"))
+
+        def closeEvent(self, event) -> None:
+            if self._on_close:
+                self._on_close()
+            super().closeEvent(event)
 else:
     class _WebWindow:
-        def __init__(self, title: str) -> None:
+        def __init__(self, title: str, on_close: Callable[[], None] | None = None) -> None:
             raise RuntimeError("Qt runtime not available; cannot open embedded window.")
 
         def load(self, loader_html: str, base_url: str) -> None:

@@ -1,16 +1,52 @@
 import React, { useEffect, useMemo, useState } from "react";
 
+function NumberInput({ value, onChange, step = "any", disabled = false }) {
+  const [draft, setDraft] = useState(value === null || value === undefined ? "" : String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (focused) return;
+    const num = Number(value);
+    if (draft === "" && Number.isFinite(num) && num === 0) return;
+    if (value === null || value === undefined || value === "") {
+      setDraft("");
+      return;
+    }
+    setDraft(String(value));
+  }, [value, focused]);
+
+  return (
+    <input
+      value={draft}
+      type="number"
+      step={step}
+      onChange={(ev) => {
+        const next = ev.target.value;
+        setDraft(next);
+        onChange(next);
+      }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      disabled={disabled}
+    />
+  );
+}
+
 function Field({ label, units, value, onChange, type = "number", step = "any", disabled = false }) {
   return (
     <div className="row">
       <div>{label}</div>
-      <input
-        value={value}
-        type={type}
-        step={step}
-        onChange={(ev) => onChange(ev.target.value)}
-        disabled={disabled}
-      />
+      {type === "number" ? (
+        <NumberInput value={value} step={step} onChange={onChange} disabled={disabled} />
+      ) : (
+        <input
+          value={value}
+          type={type}
+          step={step}
+          onChange={(ev) => onChange(ev.target.value)}
+          disabled={disabled}
+        />
+      )}
       <div className="unit">{units || ""}</div>
     </div>
   );
@@ -60,6 +96,13 @@ function formatDim(value) {
   return fixed.replace(/\.?0+$/, "");
 }
 
+function formatNumber(value, decimals = 2) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value ?? "");
+  const fixed = n.toFixed(decimals);
+  return fixed.replace(/\.?0+$/, "");
+}
+
 function getOutputNumber(value, fallback = NaN) {
   if (value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, "value")) {
     const n = Number(value.value);
@@ -76,28 +119,32 @@ function normalizeBeamDiagrams(beamSolver) {
     return {
       x_ft: diag.x_ft,
       moment_kipft: Array.isArray(diag.moment_kipft) ? diag.moment_kipft : [],
-      shear_kip: Array.isArray(diag.shear_kip) ? diag.shear_kip : []
+      shear_kip: Array.isArray(diag.shear_kip) ? diag.shear_kip : [],
+      deflection_in: Array.isArray(diag.deflection_in) ? diag.deflection_in : []
     };
   }
   if (Array.isArray(diag.x_user) && (Array.isArray(diag.moment_user) || Array.isArray(diag.shear_user))) {
     return {
       x_ft: diag.x_user,
       moment_kipft: Array.isArray(diag.moment_user) ? diag.moment_user.map((v) => v / 1000.0) : [],
-      shear_kip: Array.isArray(diag.shear_user) ? diag.shear_user.map((v) => v / 1000.0) : []
+      shear_kip: Array.isArray(diag.shear_user) ? diag.shear_user.map((v) => v / 1000.0) : [],
+      deflection_in: Array.isArray(diag.deflection_user) ? diag.deflection_user : []
     };
   }
   if (Array.isArray(beamSolver.x_ft) && (Array.isArray(beamSolver.moment_kipft) || Array.isArray(beamSolver.shear_kip))) {
     return {
       x_ft: beamSolver.x_ft,
       moment_kipft: Array.isArray(beamSolver.moment_kipft) ? beamSolver.moment_kipft : [],
-      shear_kip: Array.isArray(beamSolver.shear_kip) ? beamSolver.shear_kip : []
+      shear_kip: Array.isArray(beamSolver.shear_kip) ? beamSolver.shear_kip : [],
+      deflection_in: Array.isArray(beamSolver.deflection_in) ? beamSolver.deflection_in : []
     };
   }
   if (Array.isArray(beamSolver.x_user) && (Array.isArray(beamSolver.moment_user) || Array.isArray(beamSolver.shear_user))) {
     return {
       x_ft: beamSolver.x_user,
       moment_kipft: Array.isArray(beamSolver.moment_user) ? beamSolver.moment_user.map((v) => v / 1000.0) : [],
-      shear_kip: Array.isArray(beamSolver.shear_user) ? beamSolver.shear_user.map((v) => v / 1000.0) : []
+      shear_kip: Array.isArray(beamSolver.shear_user) ? beamSolver.shear_user.map((v) => v / 1000.0) : [],
+      deflection_in: Array.isArray(beamSolver.deflection_user) ? beamSolver.deflection_user : []
     };
   }
   return null;
@@ -377,7 +424,18 @@ function SpreaderTwoWayDiagram({
   const totalLoadCalc = loadSum + selfWeight * L;
   const cgCalc = totalLoadCalc > 0 ? (loadMoment + selfWeight * L * (L / 2.0)) / totalLoadCalc : NaN;
 
-  const cgVal = Number.isFinite(cgX) ? cgX : Number.isFinite(cgCalc) ? cgCalc : L / 2.0;
+  const totalLoadResolved =
+    Number.isFinite(totalLoadOut) && totalLoadOut > 0
+      ? totalLoadOut
+      : Number.isFinite(totalLoadCalc)
+      ? totalLoadCalc
+      : NaN;
+  const cgVal =
+    Number.isFinite(cgX) && Number.isFinite(totalLoadOut) && totalLoadOut > 0
+      ? cgX
+      : Number.isFinite(cgCalc)
+      ? cgCalc
+      : L / 2.0;
   const dLeft = Math.abs(cgVal - xLeft);
   const dRight = Math.abs(xRight - cgVal);
   const dLong = Math.max(dLeft, dRight);
@@ -405,19 +463,23 @@ function SpreaderTwoWayDiagram({
   const toY = (y) => svgH - pad - (y - minY) * scale;
 
   const beamY = 0;
-  const loadStartY = Math.max(padeyeHeightFt + 1.0, padeyeHeightFt + hookHeight * 0.35);
-  const cgArrowStartY = loadStartY + 0.6;
+  const loadStartY = Math.max(padeyeHeightFt + 1.4, padeyeHeightFt + hookHeight * 0.3);
+  const cgArrowStartY = loadStartY + 1.0;
+  const leftLabelX = xLeft + (cgVal - xLeft) * 0.35;
+  const rightLabelX = xRight - (xRight - cgVal) * 0.35;
+  const slingLabelY1 = padeyeHeightFt + 1.1;
+  const slingLabelY2 = padeyeHeightFt + 0.75;
+  const cgShift = cgVal <= L / 2 ? 0.9 : -0.9;
+  const cgLabelX = Math.min(Math.max(cgVal + cgShift, 0.6), L - 0.6);
+  const cgLabelAnchor = cgShift >= 0 ? "start" : "end";
+  const cgLabelY = cgArrowStartY + 1.0;
 
-  const totalLoadLabel = Number.isFinite(totalLoadOut)
-    ? formatDim(totalLoadOut)
-    : Number.isFinite(totalLoadCalc)
-    ? formatDim(totalLoadCalc)
-    : "-";
+  const totalLoadLabel = Number.isFinite(totalLoadResolved) ? formatDim(totalLoadResolved) : "-";
   const markerId = "tw-arrow";
   const dashedId = "tw-dash";
 
   return (
-    <svg className="padeye-diagram" viewBox={`0 0 ${svgW} ${svgH}`} role="img">
+    <svg className="padeye-diagram padeye-diagram--two-way" viewBox={`0 0 ${svgW} ${svgH}`} role="img">
       <defs>
         <marker
           id={markerId}
@@ -467,16 +529,16 @@ function SpreaderTwoWayDiagram({
       <line x1={toX(xLeft)} y1={toY(padeyeHeightFt)} x2={toX(cgVal)} y2={toY(hookY)} stroke="#f59e0b" strokeWidth="2" />
       <line x1={toX(xRight)} y1={toY(padeyeHeightFt)} x2={toX(cgVal)} y2={toY(hookY)} stroke="#f59e0b" strokeWidth="2" />
 
-      <text x={toX((xLeft + cgVal) / 2)} y={toY((padeyeHeightFt + hookY) / 2 + 0.2)} textAnchor="start">
+      <text x={toX(leftLabelX)} y={toY(slingLabelY1)} textAnchor="start">
         {Number.isFinite(angleLeft) ? `${formatDim(angleLeft)}°` : ""}
       </text>
-      <text x={toX((xLeft + cgVal) / 2)} y={toY((padeyeHeightFt + hookY) / 2 - 0.05)} textAnchor="start">
+      <text x={toX(leftLabelX)} y={toY(slingLabelY2)} textAnchor="start">
         {Number.isFinite(lenLeft) ? `${formatDim(lenLeft)} ft` : ""}
       </text>
-      <text x={toX((xRight + cgVal) / 2)} y={toY((padeyeHeightFt + hookY) / 2 + 0.2)} textAnchor="end">
+      <text x={toX(rightLabelX)} y={toY(slingLabelY1)} textAnchor="end">
         {Number.isFinite(angleRight) ? `${formatDim(angleRight)}°` : ""}
       </text>
-      <text x={toX((xRight + cgVal) / 2)} y={toY((padeyeHeightFt + hookY) / 2 - 0.05)} textAnchor="end">
+      <text x={toX(rightLabelX)} y={toY(slingLabelY2)} textAnchor="end">
         {Number.isFinite(lenRight) ? `${formatDim(lenRight)} ft` : ""}
       </text>
 
@@ -484,7 +546,10 @@ function SpreaderTwoWayDiagram({
       {loads.map((load, idx) => {
         const x = Number(load.x_ft) || 0;
         const P = Number(load.P_kip) || 0;
-        const labelY = loadStartY + 0.4 + (idx % 2) * 0.5;
+        const labelY = loadStartY + 0.2 + (idx % 3) * 0.6;
+        const xShift = (idx % 2 === 0 ? -0.6 : 0.6);
+        const labelX = Math.min(Math.max(x + xShift, 0.6), L - 0.6);
+        const labelAnchor = xShift >= 0 ? "start" : "end";
         return (
           <g key={`load-${idx}`}>
             <line
@@ -496,7 +561,7 @@ function SpreaderTwoWayDiagram({
               strokeWidth="1.6"
               markerEnd={`url(#${markerId})`}
             />
-            <text x={toX(x)} y={toY(labelY)} textAnchor="middle">
+            <text x={toX(labelX)} y={toY(labelY)} textAnchor={labelAnchor}>
               {`P ${formatDim(P)} kip @ ${formatDim(x)} ft`}
             </text>
           </g>
@@ -514,14 +579,24 @@ function SpreaderTwoWayDiagram({
         strokeDasharray="6 6"
         markerEnd={`url(#${markerId})`}
       />
-      <text x={toX(cgVal)} y={toY(cgArrowStartY + 0.35)} textAnchor="middle">
+      <text x={toX(cgLabelX)} y={toY(cgLabelY)} textAnchor={cgLabelAnchor}>
         {`CG ${formatDim(cgVal)} ft, W ${totalLoadLabel} kip`}
       </text>
     </svg>
   );
 }
 
-function LineDiagram({ title, xVals, yVals, units, color = "#38bdf8" }) {
+function LineDiagram({
+  title,
+  xVals,
+  yVals,
+  units,
+  color = "#38bdf8",
+  collapseDuplicates = true,
+  dedupeTol = 1e-6,
+  smoothWindow = 0,
+  stepMode = false
+}) {
   const svgW = 860;
   const svgH = 140;
   const pad = 50;
@@ -539,8 +614,43 @@ function LineDiagram({ title, xVals, yVals, units, color = "#38bdf8" }) {
     );
   }
 
-  const xs = pairs.map((pair) => pair[0]);
-  const ys = pairs.map((pair) => pair[1]);
+  pairs.sort((a, b) => a[0] - b[0]);
+  let xs = [];
+  let ys = [];
+  if (collapseDuplicates) {
+    const collapsed = [];
+    const tol = dedupeTol;
+    for (const [x, y] of pairs) {
+      const last = collapsed[collapsed.length - 1];
+      if (!last || Math.abs(x - last.x) > tol) {
+        collapsed.push({ x, sum: y, count: 1 });
+      } else {
+        last.sum += y;
+        last.count += 1;
+      }
+    }
+    xs = collapsed.map((pt) => pt.x);
+    ys = collapsed.map((pt) => pt.sum / pt.count);
+  } else {
+    xs = pairs.map((pair) => pair[0]);
+    ys = pairs.map((pair) => pair[1]);
+  }
+  if (smoothWindow && smoothWindow > 1) {
+    const window = Math.min(Math.floor(smoothWindow), ys.length);
+    if (window > 1) {
+      const half = Math.floor(window / 2);
+      ys = ys.map((_, i) => {
+        let sum = 0;
+        let count = 0;
+        for (let j = Math.max(0, i - half); j <= Math.min(ys.length - 1, i + half); j += 1) {
+          sum += ys[j];
+          count += 1;
+        }
+        return count ? sum / count : ys[i];
+      });
+    }
+  }
+
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
@@ -551,8 +661,23 @@ function LineDiagram({ title, xVals, yVals, units, color = "#38bdf8" }) {
   const toX = (x) => pad + ((x - minX) / spanX) * (svgW - 2 * pad);
   const toY = (y) => svgH - pad - ((y - minY) / spanY) * (svgH - 2 * pad);
 
-  const points = xs.map((x, i) => `${toX(x)},${toY(ys[i])}`).join(" ");
+  const plotPairs = stepMode
+    ? (() => {
+        const stepPts = [[xs[0], ys[0]]];
+        for (let i = 1; i < xs.length; i += 1) {
+          stepPts.push([xs[i], ys[i - 1]]);
+          stepPts.push([xs[i], ys[i]]);
+        }
+        return stepPts;
+      })()
+    : xs.map((x, i) => [x, ys[i]]);
+  const points = plotPairs.map(([x, y]) => `${toX(x)},${toY(y)}`).join(" ");
   const zeroY = minY <= 0 && maxY >= 0 ? toY(0) : null;
+  const maxVal = maxY;
+  const minVal = minY;
+  const maxIdx = ys.indexOf(maxVal);
+  const minIdx = ys.indexOf(minVal);
+  const showBoth = maxIdx !== minIdx && Math.abs(maxVal - minVal) > 1e-9;
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -561,7 +686,23 @@ function LineDiagram({ title, xVals, yVals, units, color = "#38bdf8" }) {
         {zeroY !== null ? (
           <line x1={pad} y1={zeroY} x2={svgW - pad} y2={zeroY} stroke="#94a3b8" strokeDasharray="5 6" />
         ) : null}
-        <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
+        <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={points} />
+        {Number.isFinite(maxVal) && maxIdx >= 0 ? (
+          <g>
+            <circle cx={toX(xs[maxIdx])} cy={toY(ys[maxIdx])} r="3" fill={color} />
+            <text x={toX(xs[maxIdx]) + 6} y={toY(ys[maxIdx]) - 8} fill="#e2e8f0" fontSize="11px">
+              {`${showBoth ? "max " : "max/min "}${formatDim(maxVal)} ${units}`}
+            </text>
+          </g>
+        ) : null}
+        {showBoth && Number.isFinite(minVal) && minIdx >= 0 ? (
+          <g>
+            <circle cx={toX(xs[minIdx])} cy={toY(ys[minIdx])} r="3" fill={color} />
+            <text x={toX(xs[minIdx]) + 6} y={toY(ys[minIdx]) + 16} fill="#e2e8f0" fontSize="11px">
+              {`min ${formatDim(minVal)} ${units}`}
+            </text>
+          </g>
+        ) : null}
         <text x={svgW - pad} y={pad - 8} textAnchor="end">{units}</text>
       </svg>
     </div>
@@ -745,12 +886,13 @@ export default function App() {
     }));
   }, [selectedShackle, pad.theta_deg]);
 
-  async function runSolve(targetMode, providedSignal) {
+  async function runSolve(targetMode, options = {}) {
     const activeMode = targetMode || mode;
     setBusyByMode((prev) => ({ ...prev, [activeMode]: true }));
     setErrorByMode((prev) => ({ ...prev, [activeMode]: null }));
     setNoteByMode((prev) => ({ ...prev, [activeMode]: null }));
 
+    const { signal: providedSignal, exportCalc = true, timeoutMs = 30000 } = options || {};
     let controller;
     let timeoutId;
     let signal = providedSignal;
@@ -758,7 +900,7 @@ export default function App() {
     if (!providedSignal) {
       controller = new AbortController();
       signal = controller.signal;
-      timeoutId = setTimeout(() => controller.abort(), 30000);
+      timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     }
 
     try {
@@ -777,6 +919,9 @@ export default function App() {
           : activeMode === "spreader"
           ? { ...base, ...spr }
           : { ...base, ...twoWay };
+      if (!exportCalc) {
+        payload.export = false;
+      }
       const response = await fetch(`${apiBase}/api/solve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -868,7 +1013,8 @@ export default function App() {
 
     const id = setTimeout(() => {
       // fire-and-forget; runSolve handles its own busy state
-      runSolve(mode);
+      const exportCalc = mode !== "spreader_two_way";
+      runSolve(mode, { exportCalc });
     }, debounceMs);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -884,6 +1030,16 @@ export default function App() {
     if (busyByMode[activeMode]) {
       if (ev) ev.preventDefault();
       setNoteByMode((prev) => ({ ...prev, [activeMode]: "Analysis running. Try again in a moment." }));
+      return;
+    }
+    if (
+      activeMode === "spreader_two_way" &&
+      (!resultsByMode[activeMode] ||
+        !resultsByMode[activeMode].artifacts ||
+        Object.keys(resultsByMode[activeMode].artifacts).length === 0)
+    ) {
+      if (ev) ev.preventDefault();
+      setNoteByMode((prev) => ({ ...prev, [activeMode]: "Generate the calc package first." }));
       return;
     }
     const token = Date.now();
@@ -1059,6 +1215,16 @@ export default function App() {
     setNoteByMode((prev) => ({ ...prev, spreader: "Two-way results pushed into spreader tab." }));
   }
 
+  async function generateTwoWayCalcPackage() {
+    const activeMode = "spreader_two_way";
+    const res = await runSolve(activeMode, { exportCalc: true, timeoutMs: 120000 });
+    if (!res) return;
+    const token = Date.now();
+    setReportTokenByMode((prev) => ({ ...prev, [activeMode]: token }));
+    setReportVisibleByMode((prev) => ({ ...prev, [activeMode]: true }));
+    setNoteByMode((prev) => ({ ...prev, [activeMode]: "Calc package generated." }));
+  }
+
   const results = resultsByMode[mode];
   const error = errorByMode[mode];
   const note = noteByMode[mode];
@@ -1073,6 +1239,19 @@ export default function App() {
   const twoWayTables = resultsByMode.spreader_two_way && resultsByMode.spreader_two_way.tables ? resultsByMode.spreader_two_way.tables : null;
   const twoWayBeamSolver = twoWayTables && twoWayTables.two_way ? twoWayTables.two_way.beam_solver : null;
   const twoWayDiagrams = normalizeBeamDiagrams(twoWayBeamSolver);
+  const twoWayAxial = getOutputNumber(twoWayOutputs && twoWayOutputs.axial_compression);
+  const twoWayLength = Number(twoWay.length_ft) || 0;
+  const twoWayEdge = Math.max(Number(twoWay.padeye_edge_ft) || 0, 0);
+  const twoWayLeft = Math.min(twoWayEdge, twoWayLength / 2);
+  const twoWayRight = Math.max(twoWayLength - twoWayLeft, twoWayLeft);
+  const axialDiagramX =
+    Number.isFinite(twoWayAxial) && twoWayLength > 0
+      ? [0, twoWayLeft, twoWayLeft, twoWayRight, twoWayRight, twoWayLength]
+      : [];
+  const axialDiagramY =
+    Number.isFinite(twoWayAxial) && twoWayLength > 0
+      ? [0, 0, twoWayAxial, twoWayAxial, 0, 0]
+      : [];
   const padeyeLimitStateOrder = [
     "Allowable Tensile Strength Through Pin Hole, Pt",
     "Allowable Single Plane Fracture Strength, Pb",
@@ -1171,18 +1350,19 @@ export default function App() {
   function formatOutputValue(key, value) {
     if (key === "governing_ratio") {
       const numeric = typeof value === "number" ? value : Number(value);
-      if (Number.isFinite(numeric)) return numeric.toFixed(3);
+      if (Number.isFinite(numeric)) return formatNumber(numeric, 2);
       if (value && typeof value === "object" && Number.isFinite(Number(value.value))) {
         const units = value.units ? ` ${value.units}` : "";
-        return `${Number(value.value).toFixed(3)}${units}`;
+        return `${formatNumber(value.value, 2)}${units}`;
       }
     }
     if (value && typeof value === "object") {
       if (Object.prototype.hasOwnProperty.call(value, "value")) {
-        return `${value.value} ${value.units || ""}`.trim();
+        const units = value.units ? ` ${value.units}` : "";
+        return `${formatNumber(value.value, 2)}${units}`.trim();
       }
     }
-    return String(value);
+    return formatNumber(value, 2);
   }
 
   const orderedOutputs = (() => {
@@ -1655,19 +1835,17 @@ export default function App() {
                   {(twoWay.point_loads || []).map((load, idx) => (
                     <tr key={`tw-load-${idx}`}>
                       <td style={{ paddingBottom: 6 }}>
-                        <input
-                          type="number"
+                        <NumberInput
                           step="any"
                           value={load.x_ft}
-                          onChange={(ev) => updateTwoWayLoad(idx, "x_ft", ev.target.value)}
+                          onChange={(value) => updateTwoWayLoad(idx, "x_ft", value)}
                         />
                       </td>
                       <td style={{ paddingBottom: 6 }}>
-                        <input
-                          type="number"
+                        <NumberInput
                           step="any"
                           value={load.P_kip}
-                          onChange={(ev) => updateTwoWayLoad(idx, "P_kip", ev.target.value)}
+                          onChange={(value) => updateTwoWayLoad(idx, "P_kip", value)}
                         />
                       </td>
                       <td style={{ paddingBottom: 6 }}>
@@ -1690,6 +1868,15 @@ export default function App() {
                 disabled={busy || !resultsByMode.spreader_two_way}
               >
                 Push to Spreader Tab
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ marginLeft: 8 }}
+                onClick={generateTwoWayCalcPackage}
+                disabled={busy}
+              >
+                Generate Calc Package
               </button>
             </div>
           )}
@@ -1739,6 +1926,8 @@ export default function App() {
                   yVals={twoWayDiagrams ? twoWayDiagrams.moment_kipft : []}
                   units="kip-ft"
                   color="#f59e0b"
+                  dedupeTol={0.01}
+                  smoothWindow={9}
                 />
                 <LineDiagram
                   title="Shear Diagram"
@@ -1749,19 +1938,19 @@ export default function App() {
                 />
                 <LineDiagram
                   title="Axial Diagram"
-                  xVals={
-                    twoWayOutputs
-                      ? [0, twoWay.length_ft]
-                      : []
-                  }
-                  yVals={
-                    twoWayOutputs
-                      ? [Number(twoWayOutputs.axial_compression && twoWayOutputs.axial_compression.value !== undefined ? twoWayOutputs.axial_compression.value : twoWayOutputs.axial_compression) || 0,
-                         Number(twoWayOutputs.axial_compression && twoWayOutputs.axial_compression.value !== undefined ? twoWayOutputs.axial_compression.value : twoWayOutputs.axial_compression) || 0]
-                      : []
-                  }
+                  xVals={axialDiagramX}
+                  yVals={axialDiagramY}
                   units="kip"
                   color="#22c55e"
+                  collapseDuplicates={false}
+                  stepMode={true}
+                />
+                <LineDiagram
+                  title="Deflected Shape"
+                  xVals={twoWayDiagrams ? twoWayDiagrams.x_ft : []}
+                  yVals={twoWayDiagrams ? twoWayDiagrams.deflection_in : []}
+                  units="in"
+                  color="#a78bfa"
                 />
               </div>
             </div>

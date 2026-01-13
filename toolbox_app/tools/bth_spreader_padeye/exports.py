@@ -13,11 +13,23 @@ def export_all(run_dir: Path, trace: Dict[str, Any], results: Dict[str, Any]) ->
 
     from openpyxl import Workbook
 
+    def _cell_value(value: Any) -> Any:
+        if isinstance(value, (dict, list)):
+            return json.dumps(value)
+        return value
+
     wb=Workbook()
     ws=wb.active; ws.title="Inputs"
     ws.append(["id","label","value","units","source","notes"])
     for i in trace["inputs"]:
-        ws.append([i["id"], i["label"], i["value"], i["units"], i["source"], i.get("notes","")])
+        ws.append([
+            i["id"],
+            i["label"],
+            _cell_value(i["value"]),
+            i["units"],
+            i["source"],
+            _cell_value(i.get("notes","")),
+        ])
     wsA=wb.create_sheet("Assumptions"); wsA.append(["id","text"])
     for a in trace.get("assumptions",[]):
         wsA.append([a["id"], a["text"]])
@@ -35,7 +47,7 @@ def export_all(run_dir: Path, trace: Dict[str, Any], results: Dict[str, Any]) ->
     with (run_dir/"mathcad_inputs.csv").open("w", newline="", encoding="utf-8") as f:
         wcsv=csv.writer(f); wcsv.writerow(["id","label","value","units","source"])
         for i in trace["inputs"]:
-            wcsv.writerow([i["id"], i["label"], i["value"], i["units"], i["source"]])
+            wcsv.writerow([i["id"], i["label"], _cell_value(i["value"]), i["units"], i["source"]])
         for k,v in (results.get("key_outputs") or {}).items():
             if isinstance(v, dict) and "value" in v:
                 wcsv.writerow([f"out:{k}", k, v["value"], v.get("units",""), "results"])

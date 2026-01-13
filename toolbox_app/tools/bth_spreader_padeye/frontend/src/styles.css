@@ -130,8 +130,6 @@ h1 {
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
-  transform: translateZ(0);
-  animation: cardIn 0.6s ease both;
 }
 
 @keyframes cardIn {
@@ -375,6 +373,10 @@ iframe {
   fill: var(--text);
   font-size: 11px;
   font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.padeye-diagram--two-way text {
+  font-size: 14px;
 }
 
 .check-row {

@@ -26,6 +26,7 @@ LAST_MODE: str | None = None
 
 _AISC_DB: ShapeDatabase | None = None
 _SHAPES: Dict[str, AiscShape] | None = None
+_SHAPE_CACHE: Dict[str, AiscShape] = {}
 _SPREADER_SHAPES: list[Dict[str, str]] | None = None
 
 def _load_aisc_shapes(db: ShapeDatabase) -> Dict[str, AiscShape]:
@@ -97,6 +98,22 @@ def _get_shapes() -> Dict[str, AiscShape]:
     if _SHAPES is None:
         _SHAPES = _load_aisc_shapes(_get_aisc_db())
     return _SHAPES
+
+def _get_shape(label: str) -> AiscShape:
+    if _SHAPES is not None:
+        shp = _SHAPES.get(label) or _SHAPES.get(label.upper())
+        if shp is not None:
+            return shp
+    key = (label or "").strip()
+    if not key:
+        raise ValueError("Shape label is required.")
+    cached = _SHAPE_CACHE.get(key) or _SHAPE_CACHE.get(key.upper())
+    if cached is not None:
+        return cached
+    shp = _get_aisc_db().get_shape(key)
+    _SHAPE_CACHE[shp.label] = shp
+    _SHAPE_CACHE[shp.label.upper()] = shp
+    return shp
 
 def _get_spreader_shapes() -> list[Dict[str, str]]:
     global _SPREADER_SHAPES
@@ -1220,10 +1237,10 @@ def _solve_spreader_two_way(inp: SpreaderTwoWayInputs) -> Tuple[Dict[str, Any], 
     trace = _base_trace(d)
     warnings: list[str] = []
 
-    shapes = _get_shapes()
-    shp = shapes.get(inp.shape)
-    if shp is None:
-        raise ValueError(f"Shape not found in bundled AISC database: {inp.shape}")
+    try:
+        shp = _get_shape(inp.shape)
+    except Exception as e:
+        raise ValueError(f"Shape not found in bundled AISC database: {inp.shape}") from e
     shape_type = (shp.type_code or "").strip().upper()
     if shape_type not in _ALLOWED_SPREADER_TYPES:
         raise ValueError(f"Shape type {shape_type} is not supported for spreader analysis.")
@@ -1237,15 +1254,18 @@ def _solve_spreader_two_way(inp: SpreaderTwoWayInputs) -> Tuple[Dict[str, Any], 
 
     beam_solver = _load_beam_solver()
     point_loads = [{"x_ft": pl.x_ft, "P_kip": pl.P_kip} for pl in inp.point_loads]
-    beam = beam_solver.solve_simple_beam(
+    mesh_len = max(0.1, min(0.25, inp.length_ft / 100.0))
+    beam_vertical = beam_solver.solve_simple_beam(
         total_length_ft=inp.length_ft,
         support_positions_ft=[x_left, x_right],
         point_loads_kip=point_loads,
+        point_moments_kipft=[],
         w_kipft=w_kipft,
+        mesh_max_element_length_ft=mesh_len,
     )
 
     def _reaction_at(x_target: float) -> float:
-        reactions = beam.get("reactions_kip", [])
+        reactions = beam_vertical.get("reactions_kip", [])
         if not reactions:
             return 0.0
         closest = min(reactions, key=lambda r: abs(r["x_ft"] - x_target))
@@ -1298,11 +1318,29 @@ def _solve_spreader_two_way(inp: SpreaderTwoWayInputs) -> Tuple[Dict[str, Any], 
     T_right, H_right = _sling_tension(R_right, angle_right, "Right")
 
     axial = 0.5 * (abs(H_left) + abs(H_right))
-    Mecc = axial * (depth_in / 2.0 + inp.padeye_height_in) / 12.0 if depth_in > 0 else 0.0
+    ecc_in = depth_in / 2.0 + inp.padeye_height_in
+    Mecc = axial * ecc_in / 12.0 if depth_in > 0 and ecc_in > 0 else 0.0
+    point_moments = []
+    if abs(Mecc) > 1e-9:
+        point_moments = [
+            {"x_ft": x_left, "M_kipft": Mecc},
+            {"x_ft": x_right, "M_kipft": -Mecc},
+        ]
+
+    beam = beam_vertical
+    if point_moments:
+        beam = beam_solver.solve_simple_beam(
+            total_length_ft=inp.length_ft,
+            support_positions_ft=[x_left, x_right],
+            point_loads_kip=point_loads,
+            point_moments_kipft=point_moments,
+            w_kipft=w_kipft,
+            mesh_max_element_length_ft=mesh_len,
+        )
 
     max_shear = float(beam.get("max_shear_kip", 0.0))
-    max_moment = float(beam.get("max_moment_kipft", 0.0))
-    max_moment_total = max_moment + Mecc
+    max_moment = float(beam_vertical.get("max_moment_kipft", 0.0))
+    max_moment_total = float(beam.get("max_moment_kipft", 0.0))
 
     compute_step(
         trace, "T-010", "Spreader Two-way", "Support spacing",
@@ -1436,10 +1474,10 @@ def _solve_spreader(inp: SpreaderInputs) -> Tuple[Dict[str, Any], Dict[str, Any]
     d = inp.model_dump()
     trace = _base_trace(d)
 
-    shapes = _get_shapes()
-    shp = shapes.get(inp.shape)
-    if shp is None:
-        raise ValueError(f"Shape not found in bundled AISC database: {inp.shape}")
+    try:
+        shp = _get_shape(inp.shape)
+    except Exception as e:
+        raise ValueError(f"Shape not found in bundled AISC database: {inp.shape}") from e
     shape_type = (shp.type_code or "").strip().upper()
     if shape_type == "L":
         raise ValueError("Single angles (L) are not supported for spreader checks.")
@@ -2251,6 +2289,7 @@ class Handler(SimpleHTTPRequestHandler):
             if u.path != "/api/solve":
                 return self._send_json({"ok": False, "error": "Not found"}, 404)
             mode = payload.get("mode")
+            export_calc = payload.pop("export", True)
             if mode == "padeye":
                 inp = PadeyeInputs(**payload)
                 trace, results = _solve_padeye(inp)
@@ -2265,8 +2304,11 @@ class Handler(SimpleHTTPRequestHandler):
 
             global LAST_MODE
             LAST_MODE = mode
-            files = export_all(_mode_dir(mode), trace, results)
-            results["artifacts"] = {Path(v).name: f"/api/download/{mode}/{Path(v).name}" for v in files.values()}
+            if export_calc:
+                files = export_all(_mode_dir(mode), trace, results)
+                results["artifacts"] = {Path(v).name: f"/api/download/{mode}/{Path(v).name}" for v in files.values()}
+            else:
+                results["artifacts"] = {}
             return self._send_json({"ok": True, "results": results})
         except Exception as e:
             tb = traceback.format_exc()

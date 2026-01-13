@@ -588,6 +588,7 @@ def solve_simple_beam(
     total_length_ft: float,
     support_positions_ft: List[float],
     point_loads_kip: List[Dict[str, float]],
+    point_moments_kipft: Optional[List[Dict[str, float]]] = None,
     w_kipft: float = 0.0,
     E_psi: float = 29000000.0,
     I_in4: float = 1.0,
@@ -630,20 +631,25 @@ def solve_simple_beam(
         for pl in point_loads_kip
     ]
 
+    point_moments = []
+    for pm in (point_moments_kipft or []):
+        if pm is None:
+            continue
+        x_ft = float(pm.get("x_ft", 0.0))
+        M_kipft = float(pm.get("M_kipft", 0.0))
+        if abs(M_kipft) > 1e-12:
+            point_moments.append(PointMoment(x=x_ft, M=M_kipft * 1000.0))
+
     model = BeamModel(
         unit_system="IMPERIAL_FT_LB",
         spans=spans,
         joints=joints,
         distributed_loads=dist_loads,
         point_loads=point_loads,
-        point_moments=[],
+        point_moments=point_moments,
         mesh_max_element_length=mesh_max_element_length_ft,
     )
-    try:
-        from toolbox_app.tools.beam_analysis import beam_solver as _beam_solver
-        res = _beam_solver.solve_beam(model)
-    except Exception:
-        res = solve_beam(model)
+    res = solve_beam(model)
 
     reactions_kip = [
         {

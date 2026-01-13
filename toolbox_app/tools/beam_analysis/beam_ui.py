@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +9,15 @@ from typing import Any, Dict, List, Optional
 from PySide6 import QtCore, QtWidgets
 
 
-from .beam_solver import BeamModel, Span, Joint, DistributedLoad, PointLoad, PointMoment, solve_beam
+_beam_solver = importlib.import_module("toolbox_app.blocks.1D_beam_solver")
+BeamModel = _beam_solver.BeamModel
+Span = _beam_solver.Span
+Joint = _beam_solver.Joint
+DistributedLoad = _beam_solver.DistributedLoad
+PointLoad = _beam_solver.PointLoad
+PointMoment = _beam_solver.PointMoment
+solve_beam = _beam_solver.solve_beam
+
 from .exports import export_results_excel, export_mathcad_assignments, export_results_json
 
 
