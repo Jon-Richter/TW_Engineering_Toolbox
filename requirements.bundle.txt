@@ -1,2 +1,0 @@
--r requirements.txt
--r toolbox_app/tools/wood_formwork_design/assets/requirements.txt

@@ -1,0 +1,2207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Base Plate & Anchor Design Tool (DG1 / ACI 318 Ch.17)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      color: #111827;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 24px;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      font-size: 0.9rem;
+      color: #6b7280;
+      margin-bottom: 1.5rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px 24px;
+    }
+    fieldset {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 16px 16px 12px;
+      min-width: 0;
+    }
+    legend {
+      padding: 0 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #374151;
+    }
+    .form-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .form-row label {
+      font-size: 0.8rem;
+      flex: 1 1 auto;
+    }
+    .form-row input,
+    .form-row select,
+    .form-row textarea {
+      flex: 0 0 110px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      font-size: 0.8rem;
+    }
+    .form-row textarea {
+      flex: 0 0 100%;
+      min-height: 70px;
+      resize: vertical;
+    }
+    .note {
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .btn-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin: 16px 0 8px;
+      gap: 8px;
+    }
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 8px 18px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: #111827;
+      color: #f9fafb;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.25);
+      transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s ease;
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+      box-shadow: none;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.3);
+      background: #0f172a;
+    }
+    button.secondary:hover {
+      background: #d1d5db;
+      box-shadow: none;
+      transform: none;
+    }
+    #results {
+      margin-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 16px;
+      font-size: 0.85rem;
+    }
+    .result-section {
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+    }
+    .result-section h2 {
+      margin: 0 0 8px;
+      font-size: 1.0rem;
+    }
+    .result-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 4px;
+      font-size: 0.8rem;
+    }
+    .result-table th,
+    .result-table td {
+      border: 1px solid #e5e7eb;
+      padding: 4px 6px;
+      text-align: left;
+    }
+    .result-table th {
+      background: #f3f4f6;
+      font-weight: 600;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-left: 6px;
+    }
+    .badge-pass { background: #dcfce7; color: #166534; }
+    .badge-fail { background: #fee2e2; color: #991b1b; }
+    .badge-info { background: #e0f2fe; color: #075985; }
+    .warning {
+      color: #b45309;
+      font-size: 0.75rem;
+      margin-top: 4px;
+    }
+    #report {
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.78rem;
+      background: #111827;
+      color: #e5e7eb;
+      padding: 12px 14px;
+      border-radius: 8px;
+      margin-top: 16px;
+      display: none;
+      max-height: 600px;
+      overflow: auto;
+    }
+
+    #bpDiagramContainer {
+      margin-top: 8px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      min-height: 260px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+    }
+    #bpDiagramContainer svg {
+      width: 100%;
+      height: 100%;
+    }
+    @media (max-width: 640px) {
+      .form-row {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .form-row input,
+      .form-row select {
+        width: 100%;
+        flex: 0 0 auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Base Plate & Anchor Design Tool</h1>
+    <div class="subtitle">
+      AISC DG1 base plate (axial / biaxial small &amp; large moment) + ACI 318 Ch.17 anchors (tension, shear, adhesive bond). Inch–pound units.
+    </div>
+
+    <div class="grid">
+      <!-- General -->
+      <fieldset>
+        <legend>General</legend>
+        <div class="form-row">
+          <label for="designMethod">Design method</label>
+          <select id="designMethod">
+            <option value="LRFD" selected>LRFD (ϕ-based)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Units</label>
+          <div class="note">
+            Length: in · Force: kips · Steel: ksi · f′c, bond stress: psi
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="bpCompressionModel">Base plate compression model</label>
+          <select id="bpCompressionModel">
+            <option value="uniform" selected>Uniform DG1 (per-axis small/large moment)</option>
+            <option value="triangular">Triangular (Appendix B – approx.)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="autoAnchorFromPlate">Anchor forces from plate biaxial analysis</label>
+          <select id="autoAnchorFromPlate">
+            <option value="no" selected>No – I will input anchor N,V</option>
+            <option value="yes">Yes – use elastic group distribution</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <!-- Column & Plate -->
+      <fieldset>
+        <legend>Column &amp; Base Plate</legend>
+
+        <div class="form-row">
+          <label for="memberType">Column type</label>
+          <select id="memberType">
+            <option value="W" selected>W-shape</option>
+            <option value="HSS-RECT">HSS rectangular</option>
+            <option value="HSS-ROUND">HSS round (pipe)</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label for="shapeSource">Shape source</label>
+          <select id="shapeSource">
+            <option value="manual" selected>Manual input</option>
+            <option value="library">AISC library</option>
+          </select>
+        </div>
+
+        <div id="shape-select-row" class="form-row" style="display:none;">
+          <label for="shapeSelect">Section</label>
+          <select id="shapeSelect"></select>
+        </div>
+        <div class="note" id="shape-note" style="display:none;">
+          Dimensions auto-filled from selected shape; you can override manually if needed.
+        </div>
+
+        <!-- W-shape inputs -->
+        <div id="w-shape-inputs">
+          <div class="form-row">
+            <label for="w_d">W depth d (in)</label>
+            <input id="w_d" type="number" step="0.01">
+          </div>
+          <div class="form-row">
+            <label for="w_bf">Flange width bf (in)</label>
+            <input id="w_bf" type="number" step="0.01">
+          </div>
+          <div class="form-row">
+            <label for="w_tw">Web thickness tw (in)</label>
+            <input id="w_tw" type="number" step="0.01">
+          </div>
+          <div class="form-row">
+            <label for="w_tf">Flange thickness tf (in)</label>
+            <input id="w_tf" type="number" step="0.01">
+          </div>
+        </div>
+
+        <!-- HSS rectangular inputs -->
+        <div id="hss-rect-inputs" style="display:none;">
+          <div class="form-row">
+            <label for="hss_h">HSS overall depth H (in)</label>
+            <input id="hss_h" type="number" step="0.01">
+          </div>
+          <div class="form-row">
+            <label for="hss_b">HSS overall width B (in)</label>
+            <input id="hss_b" type="number" step="0.01">
+          </div>
+          <div class="form-row">
+            <label for="hss_t">Wall thickness t (in)</label>
+            <input id="hss_t" type="number" step="0.01">
+          </div>
+        </div>
+
+        <!-- HSS round inputs -->
+        <div id="hss-round-inputs" style="display:none;">
+          <div class="form-row">
+            <label for="pipe_d">HSS round OD (in)</label>
+            <input id="pipe_d" type="number" step="0.01">
+          </div>
+          <div class="form-row">
+            <label for="pipe_t">Wall thickness t (in)</label>
+            <input id="pipe_t" type="number" step="0.01">
+          </div>
+        </div>
+
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:8px 0;">
+
+        <div class="form-row">
+          <label for="bp_B">Base plate width B (x-dir, in)</label>
+          <input id="bp_B" type="number" step="0.01">
+        </div>
+        <div class="form-row">
+          <label for="bp_N">Base plate length N (y-dir, in)</label>
+          <input id="bp_N" type="number" step="0.01">
+        </div>
+        <div class="form-row">
+          <label for="bp_t">Base plate thickness t<sub>p</sub> (in)</label>
+          <input id="bp_t" type="number" step="0.01">
+        </div>
+        <div class="form-row">
+          <label for="bp_Fy">Base plate Fy (ksi)</label>
+          <input id="bp_Fy" type="number" step="0.1" value="50">
+        </div>
+      </fieldset>
+
+      <!-- Loads -->
+      <fieldset>
+        <legend>Loads at Base</legend>
+        <div class="form-row">
+          <label for="Pu">P<sub>u</sub> (kips, +compression, −tension)</label>
+          <input id="Pu" type="number" step="0.1">
+        </div>
+        <div class="form-row">
+          <label for="Vux">V<sub>ux</sub> (kips, +x)</label>
+          <input id="Vux" type="number" step="0.1">
+        </div>
+        <div class="form-row">
+          <label for="Vuy">V<sub>uy</sub> (kips, +y)</label>
+          <input id="Vuy" type="number" step="0.1">
+        </div>
+        <div class="form-row">
+          <label for="Mux">M<sub>ux</sub> (kip-in, about x)</label>
+          <input id="Mux" type="number" step="0.1">
+        </div>
+        <div class="form-row">
+          <label for="Muy">M<sub>uy</sub> (kip-in, about y)</label>
+          <input id="Muy" type="number" step="0.1">
+        </div>
+        <div class="note">
+          Biaxial bending handled as separate small/large moment about x and y; worst controls plate thickness.
+        </div>
+      </fieldset>
+
+      <!-- Anchors -->
+      <fieldset>
+        <legend>Anchor Layout &amp; Steel</legend>
+        <div class="form-row">
+          <label for="anchor_count">Number of anchors</label>
+          <input id="anchor_count" type="number" step="1" min="0" value="4">
+        </div>
+        <div class="form-row">
+          <label for="anchor_d">Anchor nominal diameter d<sub>a</sub> (in)</label>
+          <input id="anchor_d" type="number" step="0.01">
+        </div>
+        <div class="form-row">
+          <label for="anchor_fu">Anchor steel F<sub>u</sub> (ksi)</label>
+          <input id="anchor_fu" type="number" step="1" value="58">
+        </div>
+        <div class="form-row">
+          <label for="anchor_fy">Anchor steel F<sub>y</sub> (ksi)</label>
+          <input id="anchor_fy" type="number" step="1" value="36">
+        </div>
+        <div class="form-row">
+          <label for="anchorCoords">
+            Anchor coordinates (x,y per line, in; origin at plate center)
+          </label>
+        </div>
+        <div class="form-row">
+          <label>Anchor template (symmetric grid about plate center)</label>
+        </div>
+        <div class="form-row">
+          <label for="templ_rows">Rows (n<sub>rows</sub>)</label>
+          <input id="templ_rows" type="number" step="1" min="1" value="2">
+        </div>
+        <div class="form-row">
+          <label for="templ_row_edge">Row edge distance S<sub>row</sub> (in)</label>
+          <input id="templ_row_edge" type="number" step="0.01" value="6">
+        </div>
+        <div class="form-row">
+          <label for="templ_cols">Columns (n<sub>cols</sub>)</label>
+          <input id="templ_cols" type="number" step="1" min="1" value="2">
+        </div>
+        <div class="form-row">
+          <label for="templ_col_edge">Column edge distance S<sub>col</sub> (in)</label>
+          <input id="templ_col_edge" type="number" step="0.01" value="6">
+        </div>
+        <div class="form-row">
+          <button type="button" id="generateAnchorTemplateBtn">Generate anchor grid</button>
+        </div>
+        <div class="form-row">
+          <textarea id="anchorCoords" placeholder="Example for 4 anchors at ±6&quot; x ±6&quot;:
+6,6
+6,-6
+-6,6
+-6,-6"></textarea>
+        </div>
+        <div class="note">
+          Used for elastic distribution of anchor forces and shear breakout geometry.
+        </div>
+      </fieldset>
+      <!-- Geometry Diagram -->
+      <fieldset>
+        <legend>Geometry Diagram</legend>
+        <div class="form-row">
+          <button type="button" id="updateDiagramBtn">Update Diagram</button>
+        </div>
+        <div id="bpDiagramContainer">
+          <div class="note">Diagram will appear here after you enter plate, column, and anchor geometry.</div>
+        </div>
+      </fieldset>
+
+
+      <!-- Anchor demands -->
+      <fieldset>
+        <legend>Anchor Group Demands (override)</legend>
+        <div class="form-row">
+          <label for="Nu_anchor">Anchor group N<sub>u</sub> (kips tension, ≥ 0)</label>
+          <input id="Nu_anchor" type="number" step="0.1">
+        </div>
+        <div class="form-row">
+          <label for="Vux_anchor">Anchor group V<sub>ux</sub> (kips, ≥ 0)</label>
+          <input id="Vux_anchor" type="number" step="0.1">
+        </div>
+        <div class="form-row">
+          <label for="Vuy_anchor">Anchor group V<sub>uy</sub> (kips, ≥ 0)</label>
+          <input id="Vuy_anchor" type="number" step="0.1">
+        </div>
+        <div class="note">
+          Ignored if “Anchor forces from plate biaxial analysis” = Yes.
+        </div>
+      </fieldset>
+
+      <!-- Support / concrete -->
+      <fieldset>
+        <legend>Support / Concrete</legend>
+        <div class="form-row">
+          <label for="supportMaterial">Support material</label>
+          <select id="supportMaterial">
+            <option value="concrete" selected>Concrete foundation</option>
+            <option value="steel">Steel support (no ACI checks)</option>
+          </select>
+        </div>
+
+        <div id="concrete-inputs">
+          <div class="form-row">
+            <label for="fc_prime">Concrete f′<sub>c</sub> (psi)</label>
+            <input id="fc_prime" type="number" step="50" value="4000">
+          </div>
+          <div class="form-row">
+            <label for="hef">Anchor effective embedment h<sub>ef</sub> (in)</label>
+            <input id="hef" type="number" step="0.1">
+          </div>
+          <div class="form-row">
+            <label for="slab_thickness">Concrete thickness h (in)</label>
+            <input id="slab_thickness" type="number" step="0.1">
+          </div>
+          <div class="form-row">
+            <label for="anchorSystem">Anchor / adhesive system</label>
+            <select id="anchorSystem">
+              <option value="cast-in" selected>Cast-in mechanical</option>
+              <option value="post-installed">Post-installed mechanical</option>
+              <option value="adhesive_hy200">Adhesive – Hilti HIT-HY 200</option>
+              <option value="adhesive_re500">Adhesive – Hilti HIT-RE 500 V3</option>
+              <option value="adhesive_ac200">Adhesive – DeWalt AC200+</option>
+              <option value="adhesive_p220">Adhesive – DeWalt Pure220+</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="adhesiveBondStress">
+              Adhesive design bond stress τ<sub>bond,des</sub> (psi, tension)
+            </label>
+            <input id="adhesiveBondStress" type="number" step="10" value="">
+          </div>
+          <div class="note">
+            τ<sub>bond,des</sub> are hard-coded approximations; you must confirm against current ESRs.
+          </div>
+          <div class="form-row">
+            <label for="cracked">Concrete condition</label>
+            <select id="cracked">
+              <option value="cracked" selected>Cracked</option>
+              <option value="uncracked">Uncracked</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="edge_left">Edge distance left c<sub>left</sub> (in)</label>
+            <input id="edge_left" type="number" step="0.1">
+          </div>
+          <div class="form-row">
+            <label for="edge_right">Edge distance right c<sub>right</sub> (in)</label>
+            <input id="edge_right" type="number" step="0.1">
+          </div>
+          <div class="form-row">
+            <label for="edge_bottom">Edge distance bottom c<sub>bot</sub> (in)</label>
+            <input id="edge_bottom" type="number" step="0.1">
+          </div>
+          <div class="form-row">
+            <label for="edge_top">Edge distance top c<sub>top</sub> (in)</label>
+            <input id="edge_top" type="number" step="0.1">
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- Welds -->
+      <fieldset>
+        <legend>Column-to-Base Welds</legend>
+        <div class="form-row">
+          <label for="weld_flange">Fillet weld at flanges (in)</label>
+          <input id="weld_flange" type="number" step="0.01">
+        </div>
+        <div class="form-row">
+          <label for="weld_web">Fillet weld at web (in)</label>
+          <input id="weld_web" type="number" step="0.01">
+        </div>
+        <div class="form-row">
+          <label for="weld_Fexx">Weld electrode F<sub>exx</sub> (ksi)</label>
+          <input id="weld_Fexx" type="number" step="1" value="70">
+        </div>
+        <div class="note">
+          Weld design not detailed here.
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="btn-bar">
+      <button type="button" class="secondary" id="clearBtn">Clear</button>
+      <button type="button" class="secondary" id="reportBtn">Generate Report</button>
+      <button type="button" id="runBtn">Run Design</button>
+    </div>
+
+    <div id="results"></div>
+    <div id="report"></div>
+  </div>
+
+  <script>
+    /**********************************************************
+ * SHAPE LIBRARY
+ **********************************************************/
+const SHAPES = {
+  // W-shapes: limited set W8, W10, W12 (dimensions approx. from AISC)
+  W: [
+    // ---- W8 ----
+    { name: "W8x10",  d: 7.89, bf: 4.01, tw: 0.170, tf: 0.255 },
+    { name: "W8x13",  d: 7.99, bf: 4.02, tw: 0.190, tf: 0.290 },
+    { name: "W8x15",  d: 8.11, bf: 4.03, tw: 0.215, tf: 0.305 },
+    { name: "W8x18",  d: 8.14, bf: 5.25, tw: 0.230, tf: 0.345 },
+    { name: "W8x21",  d: 8.28, bf: 5.26, tw: 0.260, tf: 0.375 },
+    { name: "W8x24",  d: 7.93, bf: 6.51, tw: 0.260, tf: 0.405 },
+    { name: "W8x28",  d: 8.06, bf: 6.54, tw: 0.285, tf: 0.440 },
+    { name: "W8x31",  d: 7.99, bf: 8.01, tw: 0.285, tf: 0.475 },
+    { name: "W8x35",  d: 8.11, bf: 8.03, tw: 0.305, tf: 0.515 },
+    { name: "W8x40",  d: 8.25, bf: 8.06, tw: 0.335, tf: 0.555 },
+
+    // ---- W10 ----
+    { name: "W10x12", d: 9.87, bf: 4.00, tw: 0.190, tf: 0.250 },
+    { name: "W10x15", d: 9.99, bf: 4.02, tw: 0.230, tf: 0.280 },
+    { name: "W10x17", d: 10.11, bf: 4.03, tw: 0.250, tf: 0.305 },
+    { name: "W10x19", d: 10.22, bf: 4.04, tw: 0.260, tf: 0.330 },
+    { name: "W10x22", d: 10.18, bf: 5.76, tw: 0.245, tf: 0.345 },
+    { name: "W10x26", d: 10.30, bf: 5.79, tw: 0.270, tf: 0.380 },
+    { name: "W10x30", d: 10.47, bf: 5.83, tw: 0.300, tf: 0.415 },
+    { name: "W10x33", d: 10.94, bf: 7.96, tw: 0.260, tf: 0.460 },
+    { name: "W10x39", d: 10.96, bf: 8.02, tw: 0.310, tf: 0.515 },
+    { name: "W10x45", d: 11.07, bf: 8.05, tw: 0.350, tf: 0.565 },
+    { name: "W10x49", d: 10.99, bf: 10.02, tw: 0.320, tf: 0.585 },
+    { name: "W10x54", d: 11.10, bf: 10.04, tw: 0.355, tf: 0.630 },
+    { name: "W10x60", d: 11.22, bf: 10.06, tw: 0.395, tf: 0.680 },
+    { name: "W10x68", d: 11.42, bf: 10.10, tw: 0.435, tf: 0.740 },
+    { name: "W10x77", d: 11.62, bf: 10.14, tw: 0.480, tf: 0.800 },
+
+    // ---- W12 ----
+    { name: "W12x14",  d: 11.91, bf: 4.02, tw: 0.190, tf: 0.260 },
+    { name: "W12x16",  d: 11.99, bf: 4.03, tw: 0.210, tf: 0.280 },
+    { name: "W12x19",  d: 12.22, bf: 4.04, tw: 0.230, tf: 0.305 },
+    { name: "W12x22",  d: 12.34, bf: 4.05, tw: 0.250, tf: 0.330 },
+    { name: "W12x26",  d: 12.19, bf: 6.49, tw: 0.250, tf: 0.345 },
+    { name: "W12x30",  d: 12.32, bf: 6.53, tw: 0.280, tf: 0.380 },
+    { name: "W12x35",  d: 12.47, bf: 6.57, tw: 0.305, tf: 0.415 },
+    { name: "W12x40",  d: 11.94, bf: 8.01, tw: 0.260, tf: 0.440 },
+    { name: "W12x45",  d: 12.09, bf: 8.04, tw: 0.290, tf: 0.480 },
+    { name: "W12x50",  d: 12.22, bf: 8.07, tw: 0.320, tf: 0.520 },
+    { name: "W12x53",  d: 12.13, bf: 10.03, tw: 0.295, tf: 0.530 },
+    { name: "W12x58",  d: 12.26, bf: 10.06, tw: 0.325, tf: 0.570 },
+    { name: "W12x65",  d: 12.16, bf: 12.03, tw: 0.320, tf: 0.595 },
+    { name: "W12x72",  d: 12.28, bf: 12.06, tw: 0.355, tf: 0.640 },
+    { name: "W12x79",  d: 12.40, bf: 12.09, tw: 0.390, tf: 0.685 },
+    { name: "W12x87",  d: 12.53, bf: 12.12, tw: 0.430, tf: 0.735 }
+  ],
+
+  // Square HSS 4" to 8" (wall thickness nominal; not critical to plate design)
+  HSS_RECT: [
+    { name: "HSS4x4x1/4", H: 4.00, B: 4.00, t: 0.250 },
+    { name: "HSS5x5x1/4", H: 5.00, B: 5.00, t: 0.250 },
+    { name: "HSS6x6x1/4", H: 6.00, B: 6.00, t: 0.250 },
+    { name: "HSS7x7x1/4", H: 7.00, B: 7.00, t: 0.250 },
+    { name: "HSS8x8x1/4", H: 8.00, B: 8.00, t: 0.250 }
+  ],
+
+  // Pipe / round HSS 4" to 8" (approx. NPS Sch 40)
+  HSS_ROUND: [
+    { name: "Pipe 4 (NPS 4)", OD: 4.50, t: 0.237 },
+    { name: "Pipe 5 (NPS 5)", OD: 5.56, t: 0.258 },
+    { name: "Pipe 6 (NPS 6)", OD: 6.63, t: 0.280 },
+    { name: "Pipe 8 (NPS 8)", OD: 8.63, t: 0.322 }
+  ]
+};
+    let lastResults = null;
+
+    function getNumber(id) {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      const v = parseFloat(el.value);
+      return isNaN(v) ? null : v;
+    }
+    function getValue(id) {
+      const el = document.getElementById(id);
+      return el ? el.value : null;
+    }
+
+    function parseAnchorCoords() {
+      const txt = getValue("anchorCoords") || "";
+      const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      const coords = [];
+      for (const line of lines) {
+        const parts = line.split(",").map(p => p.trim());
+        if (parts.length !== 2) continue;
+        const x = parseFloat(parts[0]);
+        const y = parseFloat(parts[1]);
+        if (!isNaN(x) && !isNaN(y)) coords.push({ x, y });
+      }
+      return coords;
+    }
+
+function buildAnchorTemplateGrid() {
+  try {
+    const nRows = getNumber("templ_rows") || 0;
+    const nCols = getNumber("templ_cols") || 0;
+    const Srow  = getNumber("templ_row_edge");
+    const Scol  = getNumber("templ_col_edge");
+
+    if (nRows <= 0 || nCols <= 0 || Srow == null || Scol == null) {
+      return;
+    }
+
+    function makePositions(n, edge) {
+      if (n <= 0) return [];
+      if (n === 1) return [0];
+      if (n === 2) return [-edge, edge];
+      const step = (2 * edge) / (n - 1);
+      const arr = [];
+      for (let i = 0; i < n; i++) {
+        arr.push(-edge + i * step);
+      }
+      return arr;
+    }
+
+    const ys = makePositions(nRows, Srow);
+    const xs = makePositions(nCols, Scol);
+
+    const lines = [];
+    xs.forEach(x => {
+      ys.forEach(y => {
+        const xsVal = Math.abs(x) < 1e-6 ? 0 : x;
+        const ysVal = Math.abs(y) < 1e-6 ? 0 : y;
+        lines.push(xsVal.toFixed(3).replace(/\.0+$/, "").replace(/\.(?=\D|$)/, "") + "," +
+                   ysVal.toFixed(3).replace(/\.0+$/, "").replace(/\.(?=\D|$)/, ""));
+      });
+    });
+
+    const txtArea = document.getElementById("anchorCoords");
+    if (txtArea) {
+      txtArea.value = lines.join("\n");
+    }
+
+    // Update anchor count to match generated grid
+    const count = nRows * nCols;
+    const countEl = document.getElementById("anchor_count");
+    if (countEl && count > 0) {
+      countEl.value = count;
+    }
+
+    // Refresh diagram if available
+    if (typeof updateDiagramFromInputs === "function") {
+      updateDiagramFromInputs();
+    }
+  } catch (e) {
+    console.error("Error in buildAnchorTemplateGrid:", e);
+  }
+}
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+
+    function createSvgElement(tag, attrs) {
+      const el = document.createElementNS(SVG_NS, tag);
+      if (attrs) {
+        for (const key in attrs) {
+          if (Object.prototype.hasOwnProperty.call(attrs, key)) {
+            el.setAttribute(key, attrs[key]);
+          }
+        }
+      }
+      return el;
+    }
+
+    function logicalToSvg(x, y, cx, cy, scale) {
+      return {
+        X: cx + x * scale,
+        Y: cy - y * scale
+      };
+    }
+
+    function updateDiagramFromInputs() {
+      try {
+      const container = document.getElementById("bpDiagramContainer");
+      if (!container) return;
+
+      container.innerHTML = "";
+
+      const inp = collectInputs();
+
+      const B = (typeof inp.bp_B === "number" && !isNaN(inp.bp_B)) ? inp.bp_B : null;
+      const N = (typeof inp.bp_N === "number" && !isNaN(inp.bp_N)) ? inp.bp_N : null;
+
+      if (!B || !N || B <= 0 || N <= 0) {
+        const msg = document.createElement("div");
+        msg.className = "note";
+        msg.textContent = "Enter base plate B and N to plot the geometry.";
+        container.appendChild(msg);
+        return;
+      }
+
+      const colW = (typeof inp.colWidth === "number" && !isNaN(inp.colWidth)) ? inp.colWidth : null;
+      const colD = (typeof inp.colDepth === "number" && !isNaN(inp.colDepth)) ? inp.colDepth : null;
+      const anchors = Array.isArray(inp.anchorCoords) ? inp.anchorCoords : [];
+
+      const halfB = B / 2.0;
+      const halfN = N / 2.0;
+
+      const maxDim = Math.max(B, N);
+      const marginLogical = 0.25 * maxDim;
+
+      const extentX = halfB + marginLogical;
+      const extentY = halfN + marginLogical;
+
+      const viewSize = 400;
+      const scale = viewSize / (2 * Math.max(extentX, extentY));
+
+      const cx = viewSize / 2;
+      const cy = viewSize / 2;
+
+      const svg = createSvgElement("svg", {
+        viewBox: "0 0 " + viewSize + " " + viewSize,
+        width: "100%",
+        height: "100%",
+        preserveAspectRatio: "xMidYMid meet"
+      });
+
+      // Base plate
+      const plateWidthSvg = B * scale;
+      const plateHeightSvg = N * scale;
+      const plateX = cx - plateWidthSvg / 2;
+      const plateY = cy - plateHeightSvg / 2;
+
+      svg.appendChild(createSvgElement("rect", {
+        x: plateX,
+        y: plateY,
+        width: plateWidthSvg,
+        height: plateHeightSvg,
+        fill: "none",
+        stroke: "#111827",
+        "stroke-width": "1.5"
+      }));
+
+      // Column footprint
+      if (colW && colD && colW > 0 && colD > 0) {
+        const colWidthSvg = colW * scale;
+        const colHeightSvg = colD * scale;
+        const colX = cx - colWidthSvg / 2;
+        const colY = cy - colHeightSvg / 2;
+        svg.appendChild(createSvgElement("rect", {
+          x: colX,
+          y: colY,
+          width: colWidthSvg,
+          height: colHeightSvg,
+          fill: "none",
+          stroke: "#6b7280",
+          "stroke-dasharray": "4 2",
+          "stroke-width": "1"
+        }));
+      }
+
+      // Anchors
+      const anchorRadius = 3;
+      anchors.forEach(p => {
+        if (typeof p.x !== "number" || typeof p.y !== "number") return;
+        const pt = logicalToSvg(p.x, p.y, cx, cy, scale);
+        svg.appendChild(createSvgElement("circle", {
+          cx: pt.X,
+          cy: pt.Y,
+          r: anchorRadius,
+          fill: "#111827"
+        }));
+      });
+
+      // Dimensions for B and N
+      const dimOffset = marginLogical * 0.5;
+      const tickSize = 6;
+
+      // Horizontal dimension (B)
+      const dimY = halfN + dimOffset;
+      const leftPt = logicalToSvg(-halfB, dimY, cx, cy, scale);
+      const rightPt = logicalToSvg(halfB, dimY, cx, cy, scale);
+
+      svg.appendChild(createSvgElement("line", {
+        x1: leftPt.X,
+        y1: leftPt.Y,
+        x2: rightPt.X,
+        y2: rightPt.Y,
+        stroke: "#6b7280",
+        "stroke-width": "1"
+      }));
+
+      svg.appendChild(createSvgElement("line", {
+        x1: leftPt.X,
+        y1: leftPt.Y - tickSize / 2,
+        x2: leftPt.X,
+        y2: leftPt.Y + tickSize / 2,
+        stroke: "#6b7280",
+        "stroke-width": "1"
+      }));
+
+      svg.appendChild(createSvgElement("line", {
+        x1: rightPt.X,
+        y1: rightPt.Y - tickSize / 2,
+        x2: rightPt.X,
+        y2: rightPt.Y + tickSize / 2,
+        stroke: "#6b7280",
+        "stroke-width": "1"
+      }));
+
+      const midX = (leftPt.X + rightPt.X) / 2;
+      const labelB = createSvgElement("text", {
+        x: midX,
+        y: leftPt.Y - 8,
+        "font-size": "11",
+        "text-anchor": "middle"
+      });
+      labelB.textContent = "B";
+      svg.appendChild(labelB);
+
+      // Vertical dimension (N)
+      const dimX = halfB + dimOffset;
+      const topPt = logicalToSvg(dimX, halfN, cx, cy, scale);
+      const bottomPt = logicalToSvg(dimX, -halfN, cx, cy, scale);
+
+      svg.appendChild(createSvgElement("line", {
+        x1: topPt.X,
+        y1: topPt.Y,
+        x2: bottomPt.X,
+        y2: bottomPt.Y,
+        stroke: "#6b7280",
+        "stroke-width": "1"
+      }));
+
+      svg.appendChild(createSvgElement("line", {
+        x1: topPt.X - tickSize / 2,
+        y1: topPt.Y,
+        x2: topPt.X + tickSize / 2,
+        y2: topPt.Y,
+        stroke: "#6b7280",
+        "stroke-width": "1"
+      }));
+
+      svg.appendChild(createSvgElement("line", {
+        x1: bottomPt.X - tickSize / 2,
+        y1: bottomPt.Y,
+        x2: bottomPt.X + tickSize / 2,
+        y2: bottomPt.Y,
+        stroke: "#6b7280",
+        "stroke-width": "1"
+      }));
+
+      const midY = (topPt.Y + bottomPt.Y) / 2;
+      const labelN = createSvgElement("text", {
+        x: topPt.X + 10,
+        y: midY,
+        "font-size": "11",
+        "text-anchor": "start",
+        "dominant-baseline": "middle"
+      });
+      labelN.textContent = "N";
+      svg.appendChild(labelN);
+
+      container.appendChild(svg);
+      } catch (err) {
+        const container = document.getElementById("bpDiagramContainer");
+        if (container) {
+          container.innerHTML = `<div class="warning">Diagram error: ${err && err.message ? err.message : err}</div>`;
+        }
+      }
+    }
+
+    function updateMemberInputsVisibility() {
+      const type = getValue("memberType");
+      document.getElementById("w-shape-inputs").style.display =
+        (type === "W") ? "block" : "none";
+      document.getElementById("hss-rect-inputs").style.display =
+        (type === "HSS-RECT") ? "block" : "none";
+      document.getElementById("hss-round-inputs").style.display =
+        (type === "HSS-ROUND") ? "block" : "none";
+      loadShapeDropdown();
+    }
+
+    function updateSupportVisibility() {
+      const mat = getValue("supportMaterial");
+      document.getElementById("concrete-inputs").style.display =
+        (mat === "concrete") ? "block" : "none";
+    }
+
+    function getDefaultBondStress(system, fc) {
+      const fc_ref = 4000;
+      const factor = Math.sqrt((fc || fc_ref) / fc_ref);
+      let base;
+      switch (system) {
+        case "adhesive_hy200": base = 120; break;
+        case "adhesive_re500": base = 140; break;
+        case "adhesive_ac200": base = 110; break;
+        case "adhesive_p220":  base = 140; break;
+        default: return null;
+      }
+      return base * factor;
+    }
+
+    function updateAdhesiveDefaults() {
+      const system = getValue("anchorSystem");
+      const fc = getNumber("fc_prime") || 4000;
+      const input = document.getElementById("adhesiveBondStress");
+      const def = getDefaultBondStress(system, fc);
+      input.value = def ? def.toFixed(0) : "";
+    }
+
+    function loadShapeDropdown() {
+      const source = getValue("shapeSource");
+      const type = getValue("memberType");
+      const row = document.getElementById("shape-select-row");
+      const note = document.getElementById("shape-note");
+      const select = document.getElementById("shapeSelect");
+
+      if (source !== "library") {
+        row.style.display = "none";
+        note.style.display = "none";
+        select.innerHTML = "";
+        return;
+      }
+
+      let list = [];
+      if (type === "W") list = SHAPES.W;
+      else if (type === "HSS-RECT") list = SHAPES.HSS_RECT;
+      else if (type === "HSS-ROUND") list = SHAPES.HSS_ROUND;
+
+      select.innerHTML = "";
+      if (!list || !list.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "(no shapes loaded for this type)";
+        select.appendChild(opt);
+      } else {
+        const opt0 = document.createElement("option");
+        opt0.value = "";
+        opt0.textContent = "-- select section --";
+        select.appendChild(opt0);
+        list.forEach((s, idx) => {
+          const opt = document.createElement("option");
+          opt.value = idx.toString();
+          opt.textContent = s.name;
+          select.appendChild(opt);
+        });
+      }
+      row.style.display = "flex";
+      note.style.display = "block";
+    }
+
+    function onShapeSelected() {
+      const type = getValue("memberType");
+      const source = getValue("shapeSource");
+      if (source !== "library") return;
+
+      const select = document.getElementById("shapeSelect");
+      const idx = parseInt(select.value, 10);
+      if (isNaN(idx)) return;
+
+      if (type === "W") {
+        const s = SHAPES.W[idx];
+        if (!s) return;
+        document.getElementById("w_d").value  = s.d;
+        document.getElementById("w_bf").value = s.bf;
+        document.getElementById("w_tw").value = s.tw;
+        document.getElementById("w_tf").value = s.tf;
+      } else if (type === "HSS-RECT") {
+        const s = SHAPES.HSS_RECT[idx];
+        if (!s) return;
+        document.getElementById("hss_h").value = s.H;
+        document.getElementById("hss_b").value = s.B;
+        document.getElementById("hss_t").value = s.t;
+      } else if (type === "HSS-ROUND") {
+        const s = SHAPES.HSS_ROUND[idx];
+        if (!s) return;
+        document.getElementById("pipe_d").value = s.OD;
+        document.getElementById("pipe_t").value = s.t;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+      updateMemberInputsVisibility();
+      updateSupportVisibility();
+      updateAdhesiveDefaults();
+      loadShapeDropdown();
+
+      const memberTypeEl = document.getElementById("memberType");
+      if (memberTypeEl) memberTypeEl.addEventListener("change", updateMemberInputsVisibility);
+      const supportEl = document.getElementById("supportMaterial");
+      if (supportEl) supportEl.addEventListener("change", updateSupportVisibility);
+      const anchorSysEl = document.getElementById("anchorSystem");
+      if (anchorSysEl) anchorSysEl.addEventListener("change", updateAdhesiveDefaults);
+      const fcEl = document.getElementById("fc_prime");
+      if (fcEl) fcEl.addEventListener("input", updateAdhesiveDefaults);
+      // Shape source toggle: show/hide the library dropdown and refresh the diagram
+      const shapeSourceEl = document.getElementById("shapeSource");
+      if (shapeSourceEl) {
+        shapeSourceEl.addEventListener("change", () => {
+          loadShapeDropdown();
+          onShapeSelected();
+          updateDiagramFromInputs();
+        const templBtn = document.getElementById("generateAnchorTemplateBtn");
+if (templBtn) {
+  templBtn.addEventListener("click", buildAnchorTemplateGrid);
+}
+
+});
+      }
+      // Shape picked from library: fill dims and refresh diagram
+      const shapeSelectEl = document.getElementById("shapeSelect");
+      if (shapeSelectEl) {
+        shapeSelectEl.addEventListener("change", () => {
+          onShapeSelected();
+          updateDiagramFromInputs();
+        });
+      }
+
+
+      const diagBtn = document.getElementById("updateDiagramBtn");
+      if (diagBtn) {
+        diagBtn.addEventListener("click", updateDiagramFromInputs);
+      }
+
+      // Keep the diagram in sync as base-plate dimensions are entered
+      ["bp_B","bp_N","anchorCoords"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("input", updateDiagramFromInputs);
+      });
+
+      // Initial diagram attempt (if inputs happen to be filled)
+      updateDiagramFromInputs();
+
+      const runBtn = document.getElementById("runBtn");
+      if (runBtn) runBtn.addEventListener("click", runDesign);
+      const clearBtn = document.getElementById("clearBtn");
+      if (clearBtn) clearBtn.addEventListener("click", () => {
+        document.querySelectorAll("input, textarea").forEach(el => {
+          if (el.type === "number" || el.tagName === "TEXTAREA") {
+            if (["bp_Fy","anchor_fu","anchor_fy","fc_prime","weld_Fexx"].includes(el.id)) return;
+            el.value = "";
+          }
+        });
+
+        const diag = document.getElementById("bpDiagramContainer");
+        if (diag) {
+          diag.innerHTML = "<div class=\"note\">Diagram will appear here after you enter plate, column, and anchor geometry.</div>";
+        }
+
+        lastResults = null;
+        document.getElementById("results").innerHTML = "";
+        const rep = document.getElementById("report");
+        rep.style.display = "none";
+        rep.textContent = "";
+      });
+
+      const reportBtn = document.getElementById("reportBtn");
+      if (reportBtn) reportBtn.addEventListener("click", generateReport);
+    });
+
+    function collectInputs() {
+      const memberType = getValue("memberType");
+      const supportMaterial = getValue("supportMaterial");
+      let colDepth = null;
+      let colWidth = null;
+
+      if (memberType === "W") {
+        colDepth = getNumber("w_d");
+        colWidth = getNumber("w_bf");
+      } else if (memberType === "HSS-RECT") {
+        colDepth = getNumber("hss_h");
+        colWidth = getNumber("hss_b");
+      } else if (memberType === "HSS-ROUND") {
+        colDepth = getNumber("pipe_d");
+        colWidth = getNumber("pipe_d");
+      }
+
+      return {
+        designMethod: getValue("designMethod"),
+        bpCompressionModel: getValue("bpCompressionModel"),
+        autoAnchorFromPlate: getValue("autoAnchorFromPlate") === "yes",
+        memberType,
+        supportMaterial,
+        Pu: getNumber("Pu"),
+        Vux: getNumber("Vux"),
+        Vuy: getNumber("Vuy"),
+        Mux: getNumber("Mux"),
+        Muy: getNumber("Muy"),
+        colDepth,
+        colWidth,
+        bp_B: getNumber("bp_B"),
+        bp_N: getNumber("bp_N"),
+        bp_t: getNumber("bp_t"),
+        bp_Fy: getNumber("bp_Fy"),
+        anchorCount: getNumber("anchor_count") || 0,
+        anchor_d: getNumber("anchor_d"),
+        anchor_fu: getNumber("anchor_fu"),
+        anchor_fy: getNumber("anchor_fy"),
+        anchorCoords: parseAnchorCoords(),
+        Nu_anchor: getNumber("Nu_anchor") || 0,
+        Vux_anchor: getNumber("Vux_anchor") || 0,
+        Vuy_anchor: getNumber("Vuy_anchor") || 0,
+        fc_prime: getNumber("fc_prime"),
+        hef: getNumber("hef"),
+        slabThickness: getNumber("slab_thickness"),
+        anchorSystem: getValue("anchorSystem"),
+        adhesiveBondStress: getNumber("adhesiveBondStress"),
+        cracked: getValue("cracked"),
+        edge_left: getNumber("edge_left"),
+        edge_right: getNumber("edge_right"),
+        edge_bottom: getNumber("edge_bottom"),
+        edge_top: getNumber("edge_top"),
+        weld_flange: getNumber("weld_flange"),
+        weld_web: getNumber("weld_web"),
+        weld_Fexx: getNumber("weld_Fexx")
+      };
+    }
+
+    /**********************************************************
+     * BASE PLATE DESIGN
+     **********************************************************/
+    function designBasePlate(inp) {
+      const Pu = inp.Pu || 0;
+      const B = inp.bp_B;
+      const N = inp.bp_N;
+      const tProvided = inp.bp_t;
+      const Fy = inp.bp_Fy;
+      const colD = inp.colDepth;
+      const colB = inp.colWidth;
+      const Mux = inp.Mux || 0;
+      const Muy = inp.Muy || 0;
+      const compressionModel = inp.bpCompressionModel || "uniform";
+
+      if (!B || !N || !Fy || !colD || !colB) {
+        return { ok: false, message: "Missing base plate or column dimensions." };
+      }
+
+      const A1 = B * N;
+      const info = { Pu, B, N, A1, Fy, assumptions: [], perAxis: {} };
+
+      let bearing = null;
+      if (inp.supportMaterial === "concrete" && inp.fc_prime) {
+        const fc = inp.fc_prime;
+        const phic = 0.65;
+        const Pn = 0.85 * fc * A1 / 1000.0;
+        const phiPn = phic * Pn;
+        const demandRatio = (Pu > 0 && phiPn > 0) ? Pu / phiPn : 0;
+        bearing = { fc, phic, Pn, phiPn, demandRatio };
+      }
+
+      let fudgeMajor = (inp.memberType === "W") ? 0.95 : 1.0;
+      let fudgeMinor = (inp.memberType === "W") ? 0.80 : 1.0;
+      const m = (N - fudgeMajor * colD) / 2.0;
+      const n = (B - fudgeMinor * colB) / 2.0;
+      const nPrime = (colD * colB) / 4.0;
+      const l_axial = Math.max(m || 0, n || 0, nPrime || 0);
+
+      info.m = m;
+      info.n = n;
+      info.nPrime = nPrime;
+      info.l_axial = l_axial;
+
+      const phi_b = 0.90;
+      let tAxial = null;
+      if (Pu > 0 && l_axial > 0) {
+        tAxial = l_axial * Math.sqrt(2.0 * Pu / (phi_b * Fy * B * N));
+      }
+      info.tRequiredAxial = tAxial;
+
+      function oneAxisThickness(Mu, span, proj, label) {
+        if (Pu <= 0 || !Mu || !span || !proj || proj <= 0) return null;
+        const axis = {};
+        const e = Mu / Pu;
+        axis.e = e;
+
+        const fc = (inp.supportMaterial === "concrete")
+          ? (inp.fc_prime || 3000)
+          : null;
+        const qmax = fc ? (0.85 * fc / 1000.0) : Number.POSITIVE_INFINITY;
+        axis.qmax = qmax;
+
+        const plateWidth = (label === "y") ? B : N;
+        const ecrit = span / 2.0 - Pu / (2.0 * qmax * plateWidth);
+        axis.ecrit = ecrit;
+
+        let Y = null, fp = null, mode = null;
+        if (e <= ecrit) {
+          mode = "small";
+          Y = Pu / (qmax * plateWidth);
+          if (!Y || Y <= 0) Y = span;
+          if (Y > span) Y = span;
+          fp = Pu / (plateWidth * Y);
+        } else {
+          mode = "large";
+          Y = Pu / (qmax * plateWidth);
+          if (!Y || Y <= 0) Y = span;
+          if (Y > span) Y = span;
+          fp = qmax;
+        }
+        axis.mode = mode;
+        axis.Y = Y;
+        axis.fp = fp;
+
+        let tReq;
+        if (compressionModel === "uniform") {
+          if (Y >= proj) {
+            tReq = Math.sqrt(1.49 * proj * fp / Fy);
+          } else {
+            tReq = Math.sqrt(2.11 * fp * Y * (proj - Y / 2.0) / Fy);
+          }
+        } else {
+          const fp_eq = (2.0 / 3.0) * fp;
+          if (Y >= proj) {
+            tReq = Math.sqrt(1.49 * proj * fp_eq / Fy);
+          } else {
+            tReq = Math.sqrt(2.11 * fp_eq * Y * (proj - Y / 2.0) / Fy);
+          }
+        }
+        axis.tReq = tReq;
+        return axis;
+      }
+
+      const axisY = oneAxisThickness(Mux, N, m, "y");
+      const axisX = oneAxisThickness(Muy, B, n, "x");
+
+      info.perAxis.x = axisX;
+      info.perAxis.y = axisY;
+
+      let tMoment = null;
+      if (axisX && axisX.tReq != null) tMoment = axisX.tReq;
+      if (axisY && axisY.tReq != null) tMoment = (tMoment == null) ? axisY.tReq : Math.max(tMoment, axisY.tReq);
+      info.tRequiredMoment = tMoment;
+      const tFinal = Math.max(tAxial || 0, tMoment || 0);
+      info.tRequiredFinal = tFinal;
+      info.tProvided = tProvided;
+
+      if (inp.memberType === "W") info.assumptions.push("W-shape projections m, n ~ DG1; λ ≈ 1.0.");
+      else info.assumptions.push("HSS treated with equivalent flat projections m, n.");
+      info.assumptions.push("Per-axis small/large moment; biaxial handled by max(t_req,x, t_req,y).");
+      if (compressionModel === "triangular") info.assumptions.push("Triangular compression block → equivalent uniform fp = 2/3·fp_max.");
+
+      return { ok: true, bearing, plate: info };
+    }
+
+    /**********************************************************
+     * BASE PLATE UPLIFT (ANCHOR TENSION)
+     * Simple strip model:
+     *   φ·Fy·b_eff·t_p^2 / 4 ≥ N_i · a_i  →  t_req,i = √[4·N_i·a_i / (φ·Fy·b_eff)]
+     * Effective width b_eff is truncated by plate edges and nearest anchors so steel
+     * is not double-counted.
+     **********************************************************/
+    function designBasePlateUplift(inp, anchorsElastic) {
+      if (!anchorsElastic || !anchorsElastic.length) {
+        return { ok: false, message: "No per-anchor forces available for uplift check." };
+      }
+      const B = inp.bp_B;
+      const N = inp.bp_N;
+      const Fy = inp.bp_Fy;
+      const t  = inp.bp_t;
+      const colD = inp.colDepth;
+      const colB = inp.colWidth;
+      if (!B || !N || !Fy || !t || !colD || !colB) {
+        return { ok: false, message: "Missing plate / column dimensions or plate thickness for uplift check." };
+      }
+
+      const phi_b = 0.90;
+      const halfB = B / 2.0;   // plate half-width (x)
+      const halfN = N / 2.0;   // plate half-length (y)
+      const halfColB = colB / 2.0; // column half-width (x)
+      const halfColD = colD / 2.0; // column half-depth (y)
+
+      const perAnchor = [];
+      let tReqMax = null;
+      let controlling = null;
+
+      anchorsElastic.forEach((a, i) => {
+        const Ni = a.N || 0;
+        if (Ni <= 0) return; // only tension anchors participate in uplift
+
+        const x = a.x;
+        const y = a.y;
+
+        // Distance from column footprint to anchor in x and y directions
+        const dx_out = Math.max(0, Math.abs(x) - halfColB);
+        const dy_out = Math.max(0, Math.abs(y) - halfColD);
+
+        if (dx_out <= 0 && dy_out <= 0) return; // inside column footprint; ignore
+
+        let direction, aCant;
+        if (dx_out > 0 && (dy_out <= 0 || dx_out <= dy_out)) {
+          direction = "x"; // cantilever in ±x
+          aCant = dx_out;
+        } else if (dy_out > 0 && (dx_out <= 0 || dy_out < dx_out)) {
+          direction = "y"; // cantilever in ±y
+          aCant = dy_out;
+        } else {
+          return;
+        }
+
+        // Effective width b_eff in direction perpendicular to cantilever
+        let widthDim, coordPerp, plateHalfPerp;
+        if (direction === "x") {
+          widthDim = N;              // plate dimension along y
+          coordPerp = y;
+          plateHalfPerp = halfN;
+        } else {
+          widthDim = B;              // plate dimension along x
+          coordPerp = x;
+          plateHalfPerp = halfB;
+        }
+
+        // Limit by plate edge: width at anchor line is 2*(edge distance in perpendicular direction)
+        const widthToEdge = 2 * Math.max(0, plateHalfPerp - Math.abs(coordPerp));
+
+        // Limit by spacing to nearest anchor in the same strip (avoid double-counting)
+        let s_min = Infinity;
+        anchorsElastic.forEach((b, j) => {
+          if (j === i || (b.N || 0) <= 0) return;
+          const coordPerpB = (direction === "x") ? b.y : b.x;
+          const spacing = Math.abs(coordPerp - coordPerpB);
+          if (spacing > 0 && spacing < s_min) s_min = spacing;
+        });
+
+        let beff = widthToEdge;
+        if (!isFinite(beff) || beff <= 0) beff = widthDim;
+        if (isFinite(s_min)) beff = Math.min(beff, s_min);
+        if (beff <= 0) return;
+
+        // Moment and required thickness / demand ratio
+        const Mu = Ni * aCant; // kip-in
+        const phiMn = phi_b * Fy * beff * t * t / 4.0; // kip-in
+        const DR = (phiMn > 0) ? (Mu / phiMn) : null;
+
+        const tReq = Math.sqrt((4.0 * Ni * aCant) / (phi_b * Fy * beff));
+
+        const rec = {
+          index: i,
+          N: Ni,
+          x, y,
+          direction,
+          a: aCant,
+          beff,
+          Mu,
+          phiMn,
+          tReq,
+          DR
+        };
+        perAnchor.push(rec);
+
+        if (tReqMax == null || tReq > tReqMax) {
+          tReqMax = tReq;
+          controlling = rec;
+        }
+      });
+
+      if (!perAnchor.length) {
+        return { ok: false, message: "No anchors in tension outside the column footprint for uplift check." };
+      }
+
+      return {
+        ok: true,
+        phi_b,
+        perAnchor,
+        tReq_max: tReqMax,
+        controlling
+      };
+    }
+
+    /**********************************************************
+     * ACI HELPERS
+     **********************************************************/
+    function kc_tension(sys) {
+      return sys === "cast-in" ? 24.0 : 17.0;
+    }
+    function kc_shear(sys) {
+      return sys === "cast-in" ? 16.0 : 10.0;
+    }
+    function psi_c_N(sys, cracked) {
+      if (cracked === "cracked") return 1.0;
+      if (sys === "cast-in") return 1.25;
+      return 1.0;
+    }
+    function psi_c_V(cracked) {
+      return cracked === "cracked" ? 1.0 : 1.25;
+    }
+    function psi_ed_N(c_min, hef) {
+      if (!c_min || !hef) return 1.0;
+      const v = 0.7 + 0.3 * (c_min / (1.5 * hef));
+      return Math.min(1.0, Math.max(0.7, v));
+    }
+    function psi_ed_V(ca1, hef) {
+      if (!ca1 || !hef) return 1.0;
+      const v = 0.7 + 0.3 * (ca1 / (1.5 * hef));
+      return Math.min(1.0, Math.max(0.7, v));
+    }
+    function psi_h_V(h, hef) {
+      if (!h || !hef) return 1.0;
+      if (h >= 1.5 * hef) return 1.0;
+      const v = 0.7 + 0.3 * (h / (1.5 * hef));
+      return Math.min(1.0, Math.max(0.7, v));
+    }
+
+    function adhesiveBondCapacity(inp, nAnch, d_a, hef) {
+      const tau = inp.adhesiveBondStress;
+      if (!tau || !nAnch || !d_a || !hef) return null;
+      const area = Math.PI * d_a * hef;
+      const N_nom = tau * area * nAnch / 1000.0; // user-entered is already "design"
+      const phiNa = N_nom;
+      return { N_nom, phiNa, tau };
+    }
+
+    /**********************************************************
+     * ELASTIC ANCHOR DISTRIBUTION
+     **********************************************************/
+    function computeElasticAnchorForces(inp, Nu_group, Vux_group, Vuy_group) {
+      const coords = inp.anchorCoords || [];
+      const n = coords.length;
+      const anchors = [];
+      if (n === 0) return { anchors: [], Nu_group: 0, Vux_group, Vuy_group };
+
+      const Nu = Math.max(0, Nu_group || 0);
+
+      let xSum = 0, ySum = 0;
+      coords.forEach(p => { xSum += p.x; ySum += p.y; });
+      const xcg = xSum / n, ycg = ySum / n;
+      const rel = coords.map(p => ({ x: p.x - xcg, y: p.y - ycg }));
+
+      let Ixx = 0, Iyy = 0;
+      rel.forEach(p => {
+        Ixx += p.y * p.y;
+        Iyy += p.x * p.x;
+      });
+      if (Ixx === 0) Ixx = 1e-6;
+      if (Iyy === 0) Iyy = 1e-6;
+
+      const Mux = inp.Mux || 0;
+      const Muy = inp.Muy || 0;
+
+      // Moment-only tension (can be + or -); compression clipped to zero.
+      let momentTensions = [];
+      let momentPosSum = 0;
+      for (let i = 0; i < n; i++) {
+        const p = rel[i];
+        const Ni_m = (Mux * p.y / Ixx) + (Muy * p.x / Iyy);
+        const Ni_pos = Math.max(0, Ni_m);
+        momentTensions.push(Ni_pos);
+        momentPosSum += Ni_pos;
+      }
+
+      // Scale moment tension so total anchor tension never exceeds Nu (e.g., high compression
+      // with large moment should not report net tension at the anchors).
+      let scaledMoment = momentTensions;
+      let uniformShare = 0;
+      if (momentPosSum > 0 && Nu > 0) {
+        if (momentPosSum > Nu) {
+          const scale = Nu / momentPosSum;
+          scaledMoment = momentTensions.map(m => m * scale);
+        } else {
+          uniformShare = (Nu - momentPosSum) / n;
+        }
+      } else if (Nu > 0) {
+        uniformShare = Nu / n;
+      }
+
+      let Nu_check = 0;
+      for (let i = 0; i < n; i++) {
+        const Ni = (scaledMoment[i] || 0) + uniformShare;
+        Nu_check += Ni;
+        anchors.push({
+          x: rel[i].x,
+          y: rel[i].y,
+          N: Ni,
+          Vx: Vux_group / n,
+          Vy: Vuy_group / n
+        });
+      }
+
+      return {
+        anchors,
+        Nu_group: Nu_check,
+        Vux_group,
+        Vuy_group
+      };
+    }
+
+    // Approximate total anchor tension from Pu, Mux, Muy via kern concept
+
+    // Approximate total anchor group tension from Pu, Mux, Muy via rectangular kern
+    function approximateAnchorGroupTension(inp) {
+      const Pu  = inp.Pu  || 0; // +compression, −tension
+      const B   = inp.bp_B;
+      const N   = inp.bp_N;
+      const Mux = inp.Mux || 0;
+      const Muy = inp.Muy || 0;
+
+      // Net tension: anchors take full axial load (moments only redistribute)
+      if (Pu < 0) return Math.abs(Pu);
+
+      if (!B || !N || Pu === 0) return 0;
+
+      // Eccentricities (about centroid of plate)
+      const ex = Muy / Pu; // bending about x → moment My, e along x
+      const ey = Mux / Pu; // bending about y → moment Mx, e along y
+
+      const ex_lim = B / 6.0;
+      const ey_lim = N / 6.0;
+
+      // Inside kern in both directions → no uplift
+      if (Math.abs(ex) <= ex_lim && Math.abs(ey) <= ey_lim) return 0;
+
+      // 1D approximations for each direction based on linear stress block
+      function oneDimNu(e, e_lim, dim) {
+        const e_abs = Math.abs(e);
+        if (e_abs <= e_lim) return 0;
+        // e_lim corresponds to zero tension; beyond that tension grows ~ linearly
+        // until e ≈ dim/2 → all compression lost.
+        const e_max = dim / 2.0;
+        const ratio = Math.min(1.0, (e_abs - e_lim) / (e_max - e_lim + 1e-6));
+        return Pu * ratio;
+      }
+
+      const Nu_x = oneDimNu(ex, ex_lim, B);
+      const Nu_y = oneDimNu(ey, ey_lim, N);
+
+      // Combine biaxially – conservative to sum but cap at Pu
+      let Nu = Nu_x + Nu_y;
+      if (Nu > Pu) Nu = Pu;
+      if (Nu < 0) Nu = 0;
+      return Nu;
+    }
+
+    /**********************************************************
+     * ACI ANCHOR DESIGN
+     **********************************************************/
+    function designAnchorsACI(inp, elasticAnchorResult) {
+      const nAnch = inp.anchorCount || 0;
+      if (nAnch <= 0) {
+        return { ok: false, message: "No anchors specified; ACI anchor check skipped." };
+      }
+
+      let Nu = Math.max(0, inp.Nu_anchor || 0);
+      let Vux = Math.max(0, inp.Vux_anchor || 0);
+      let Vuy = Math.max(0, inp.Vuy_anchor || 0);
+      let anchorsElastic = null;
+
+      if (inp.autoAnchorFromPlate && elasticAnchorResult) {
+        Nu = elasticAnchorResult.Nu_group;
+        Vux = elasticAnchorResult.Vux_group;
+        Vuy = elasticAnchorResult.Vuy_group;
+        anchorsElastic = elasticAnchorResult.anchors;
+      }
+
+      if (inp.supportMaterial !== "concrete") {
+        return { ok: false, message: "Support material is not concrete; ACI 318 anchor checks not applicable." };
+      }
+
+      const d_a = inp.anchor_d;
+      const hef = inp.hef;
+      const fc = inp.fc_prime;
+      const h = inp.slabThickness;
+      if (!d_a || !hef || !fc) {
+        return { ok: false, message: "Missing anchor diameter, embedment, or f′c for ACI 318 anchor checks." };
+      }
+
+      const coords = inp.anchorCoords || [];
+      const anchorSystem = inp.anchorSystem || "cast-in";
+      const cracked = inp.cracked;
+      const fu = inp.anchor_fu || 58.0;
+
+      const As = Math.PI * d_a * d_a / 4.0;
+      const AseN = As;
+      const AseV = As;
+
+      let xs = [], ys = [];
+      coords.forEach(p => { xs.push(p.x); ys.push(p.y); });
+      let s_x = 0.0, s_y = 0.0;
+      if (xs.length > 1) s_x = Math.max(...xs) - Math.min(...xs);
+      if (ys.length > 1) s_y = Math.max(...ys) - Math.min(...ys);
+      const x_cg = xs.length ? xs.reduce((a,b)=>a+b,0)/xs.length : 0;
+      const y_cg = ys.length ? ys.reduce((a,b)=>a+b,0)/ys.length : 0;
+
+      const c_left = inp.edge_left || 0;
+      const c_right = inp.edge_right || 0;
+      const c_bot = inp.edge_bottom || 0;
+      const c_top = inp.edge_top || 0;
+      const c_min = Math.min(
+        c_left || Infinity,
+        c_right || Infinity,
+        c_bot || Infinity,
+        c_top || Infinity
+      );
+
+      const kc = kc_tension(anchorSystem);
+      const psi_cN = psi_c_N(anchorSystem, cracked);
+      const psi_edN = psi_ed_N(c_min, hef);
+      const psi_ecN = 1.0;
+      const psi_cpN = 1.0;
+
+      const ANco = 9.0 * hef * hef;
+      const ANc_x =
+        (s_x || 0) +
+        Math.min(c_left || 0, 1.5 * hef) +
+        Math.min(c_right || 0, 1.5 * hef);
+      const ANc_y =
+        (s_y || 0) +
+        Math.min(c_bot || 0, 1.5 * hef) +
+        Math.min(c_top || 0, 1.5 * hef);
+      let ANc = ANc_x * ANc_y;
+      const ANc_max = nAnch * ANco;
+      if (ANc > ANc_max) ANc = ANc_max;
+
+      const Nb_single = kc * Math.sqrt(fc) * Math.pow(hef, 1.5) / 1000.0;
+      let Ncbg_nom = Nb_single * (ANc / ANco) * psi_edN * psi_ecN * psi_cN * psi_cpN;
+      const phi_cb = 0.75;
+      const phiN_cb = phi_cb * Ncbg_nom;
+
+      const Nsa_nom = nAnch * AseN * fu / 1000.0;
+      const phiN_steel = 0.75 * Nsa_nom;
+
+      const Np_nom = 8.0 * Math.sqrt(fc) * Math.pow(hef, 1.5) * nAnch / 1000.0;
+      const phiN_pullout = 0.70 * Np_nom;
+
+      let Nsb_nom = null, phiN_sb = null;
+      if (hef > 2.5 * c_min && c_min < 1.5 * hef) {
+        Nsb_nom = 3.0 * Math.sqrt(fc) * Math.pow(c_min, 1.5) * nAnch / 1000.0;
+        phiN_sb = 0.70 * Nsb_nom;
+      }
+
+      const bond = (anchorSystem.indexOf("adhesive") === 0)
+        ? adhesiveBondCapacity(inp, nAnch, d_a, hef)
+        : null;
+      let phiN_bond = bond ? bond.phiNa : null;
+
+      const tensionCandidates = [
+        { id: "steel",   mode: "Steel tension",             phiN: phiN_steel },
+        { id: "cb",      mode: "Concrete breakout",        phiN: phiN_cb },
+        { id: "pullout", mode: "Pullout (approx.)",        phiN: phiN_pullout },
+        { id: "sb",      mode: "Side-face blowout (approx.)", phiN: phiN_sb },
+        { id: "bond",    mode: "Adhesive bond",            phiN: phiN_bond }
+      ].filter(c => c.phiN && c.phiN > 0);
+
+      let governingTension = null;
+      for (const c of tensionCandidates) {
+        if (!governingTension || c.phiN < governingTension.phiN) governingTension = c;
+      }
+      const Nphi = governingTension ? governingTension.phiN : null;
+      const tensionUtil = (Nphi && Nphi > 0) ? Nu / Nphi : null;
+
+      const Vu = Math.hypot(Vux, Vuy);
+
+      const ca1 = c_min;
+      const kcV = kc_shear(anchorSystem);
+      const psi_cV = psi_c_V(cracked);
+      const psi_edV = psi_ed_V(ca1, hef);
+      const psi_hV = psi_h_V(h || (2.0 * hef), hef);
+
+      const Avco = 4.5 * hef * hef;
+      const Avc_x =
+        (s_x || 0) +
+        Math.min(c_left || 0, 1.5 * hef) +
+        Math.min(c_right || 0, 1.5 * hef);
+      const Avc_y =
+        (s_y || 0) +
+        Math.min(c_bot || 0, 1.5 * hef) +
+        Math.min(c_top || 0, 1.5 * hef);
+      let Avc = Avc_x * Avc_y;
+      const Avc_capped = Math.min(Avc, nAnch * Avco);
+
+      const Vb_single = kcV * Math.sqrt(fc) * Math.pow(hef, 1.5) / 1000.0;
+      let Vcbg_nom = Vb_single * (Avc_capped / Avco) * psi_cV * psi_edV * psi_hV;
+      const phiV_cb = 0.70;
+      const phiV_cb_g = phiV_cb * Vcbg_nom;
+
+      let Vcp_nom = null;
+      if (hef / d_a >= 2.5) {
+        let kcp = (hef / d_a >= 4.5) ? 2.0 : 1.0;
+        const N_for_pryout = Math.min(Ncbg_nom, (bond && bond.N_nom) ? bond.N_nom : Ncbg_nom);
+        Vcp_nom = kcp * N_for_pryout;
+      }
+      const phiV_cp = 0.70;
+      const phiV_cp_g = Vcp_nom ? phiV_cp * Vcp_nom : null;
+
+      const phi = 0.75;
+      const shearSteelNom = nAnch * 0.6 * fu * AseV / 1000.0;
+      const shearSteelDesign = phi * 0.80 * shearSteelNom;
+
+      const shearCandidates = [
+        { id: "steel", mode: "Steel shear",               phiV: shearSteelDesign },
+        { id: "cb",    mode: "Concrete shear breakout",   phiV: phiV_cb_g },
+        { id: "cp",    mode: "Concrete pryout (approx.)", phiV: phiV_cp_g }
+      ].filter(c => c.phiV && c.phiV > 0);
+
+      let governingShear = null;
+      for (const c of shearCandidates) {
+        if (!governingShear || c.phiV < governingShear.phiV) governingShear = c;
+      }
+      const Vphi = governingShear ? governingShear.phiV : null;
+      const shearUtil = (Vphi && Vphi > 0) ? Vu / Vphi : null;
+      const interactionUtil = (Nu && Vphi && Nphi)
+        ? (Nu / Nphi) + (Vu / Vphi)
+        : null;
+
+      return {
+        ok: true,
+        inputSummary: {
+          nAnch, d_a, As, hef, fc,
+          coords, s_x, s_y, x_cg, y_cg,
+          c_left, c_right, c_bot, c_top,
+          anchorSystem, cracked
+        },
+        tension: {
+          Nu,
+          Nb_single,
+          ANco,
+          ANc,
+          psi_edN,
+          psi_cN,
+          psi_ecN,
+          psi_cpN,
+          phiN_cb,
+          phiN_steel,
+          phiN_pullout,
+          phiN_sb,
+          phiN_bond,
+          Nphi,
+          governingMode: governingTension ? governingTension.mode : "n/a",
+          governingId: governingTension ? governingTension.id : null,
+          utilization: tensionUtil
+        },
+        bond,
+        shear: {
+          Vux, Vuy, Vu,
+          phiV_cb_g,
+          phiV_cp_g,
+          shearSteelDesign,
+          governingMode: governingShear ? governingShear.mode : "n/a",
+          governingId: governingShear ? governingShear.id : null,
+          Vphi,
+          utilization: shearUtil,
+          interactionUtil
+        },
+        anchorsElastic
+      };
+    }
+
+    function formatNumber(x, d) {
+      if (x == null || isNaN(x)) return "-";
+      return x.toFixed(d);
+    }
+
+    function renderResults(results) {
+      const container = document.getElementById("results");
+      container.innerHTML = "";
+
+      if (!results.base || !results.base.ok) {
+        container.innerHTML = "<div class='warning'>Base plate design did not run – check required inputs.</div>";
+        return;
+      }
+
+      const base = results.base;
+      const plate = base.plate;
+      const bearing = base.bearing;
+      const uplift = results.uplift;
+
+      let html = "";
+
+      html += "<div class='result-section'>";
+      html += "<h2>Base Plate – Bearing &amp; Biaxial Flexural Yielding</h2>";
+      html += "<table class='result-table'>";
+      html += "<tr><th>Item</th><th>Value</th><th>Notes</th></tr>";
+      html += `<tr><td>Pu (kips, +compression)</td><td>${formatNumber(plate.Pu,2)}</td><td></td></tr>`;
+      html += `<tr><td>Plate size B x N (in)</td><td>${formatNumber(plate.B,2)} x ${formatNumber(plate.N,2)}</td><td>A1 = ${formatNumber(plate.A1,1)} in^2</td></tr>`;
+
+      if (bearing) {
+        const status = (bearing.demandRatio || 0) <= 1.0 ? "PASS" : "FAIL";
+        const cl = status === "PASS" ? "badge-pass" : "badge-fail";
+        html += `<tr><td>Concrete bearing</td><td>ϕP_n = ${formatNumber(bearing.phiPn,1)} kips<br>Utilization = ${formatNumber(bearing.demandRatio,3)}</td><td><span class="badge ${cl}">${status}</span></td></tr>`;
+      } else {
+        html += "<tr><td>Concrete bearing</td><td>-</td><td>No f′c; not checked.</td></tr>";
+      }
+
+      if (plate.tRequiredAxial != null) {
+        html += `<tr><td>t_req, axial</td><td>${formatNumber(plate.tRequiredAxial,3)} in</td><td>Axial flexural-yielding.</td></tr>`;
+      }
+
+      function axisRow(name, axis) {
+        if (!axis || axis.tReq == null) return "";
+        return `<tr><td>${name}</td><td>e = ${formatNumber(axis.e,2)} in; e_crit ≈ ${formatNumber(axis.ecrit,2)} in<br>Y ≈ ${formatNumber(axis.Y,2)} in; f_p ≈ ${formatNumber(axis.fp,3)} ksi<br>t_req = ${formatNumber(axis.tReq,3)} in</td><td>${axis.mode} moment</td></tr>`;
+      }
+      html += axisRow("x-axis (M_y)", plate.perAxis.x);
+      html += axisRow("y-axis (M_x)", plate.perAxis.y);
+
+      if (plate.tRequiredFinal != null) {
+        const t_final = plate.tRequiredFinal;
+        const status = (plate.tProvided && plate.tProvided >= t_final) ? "PASS" : "FAIL";
+        const cl = status === "PASS" ? "badge-pass" : "badge-fail";
+        html += `<tr><td>Thickness summary</td><td>t_req,final = ${formatNumber(t_final,3)} in<br>t_provided = ${formatNumber(plate.tProvided,3)} in</td><td><span class="badge ${cl}">${status}</span></td></tr>`;
+      }
+      if (uplift && uplift.ok) {
+        const c = uplift.controlling;
+        const statusU = (c && c.DR != null && c.DR <= 1.0) ? "PASS" : "FAIL";
+        const clU = statusU === "PASS" ? "badge-pass" : "badge-fail";
+        html += `<tr><td>Plate in uplift (anchor tension)</td><td>t_req,uplift = ${formatNumber(uplift.tReq_max,3)} in<br>t_provided = ${formatNumber(plate.tProvided,3)} in<br>DR = ${c && c.DR != null ? formatNumber(c.DR,3) : "-"}</td><td><span class="badge ${clU}">${statusU}</span>${c ? `<br>Controls at anchor #${c.index+1}, a = ${formatNumber(c.a,2)} in, b_eff = ${formatNumber(c.beff,2)} in` : ""}</td></tr>`;
+      }
+
+      html += `<tr><td>Cantilever dims</td><td>m = ${formatNumber(plate.m,2)} in<br>n = ${formatNumber(plate.n,2)} in<br>n′ ≈ ${formatNumber(plate.nPrime,2)} in</td><td></td></tr>`;
+      html += "</table>";
+      if (plate.assumptions && plate.assumptions.length) {
+        html += "<div class='note'><strong>Assumptions:</strong><br>" +
+          plate.assumptions.map(a => "• " + a).join("<br>") + "</div>";
+      }
+      html += "</div>";
+
+      if (results.anchors && results.anchors.ok) {
+        const anc = results.anchors;
+        const t = anc.tension;
+        const s = anc.shear;
+
+        html += "<div class='result-section'>";
+        html += "<h2>Anchors – Group Strength &amp; Elastic Forces</h2>";
+        html += "<table class='result-table'>";
+        html += "<tr><th>Item</th><th>Value</th><th>Notes</th></tr>";
+        html += `<tr><td>Anchor group</td><td>${anc.inputSummary.nAnch} anchors, d_a = ${formatNumber(anc.inputSummary.d_a,3)} in<br>A_s = ${formatNumber(anc.inputSummary.As,4)} in^2 each</td><td>System: ${anc.inputSummary.anchorSystem}, concrete ${anc.inputSummary.cracked}</td></tr>`;
+        html += `<tr><td>Embedment / f′c</td><td>h_ef = ${formatNumber(anc.inputSummary.hef,2)} in<br>f′c = ${formatNumber(anc.inputSummary.fc,0)} psi</td><td></td></tr>`;
+        html += `<tr><td>Group demand (tension)</td><td>N_u = ${formatNumber(t.Nu,2)} kips</td><td></td></tr>`;
+        html += `<tr><td>Group tension capacities</td><td>φN_steel = ${formatNumber(t.phiN_steel,2)} kips<br>φN_cbg = ${formatNumber(t.phiN_cb,2)} kips<br>φN_pullout = ${formatNumber(t.phiN_pullout,2)} kips<br>φN_sb = ${formatNumber(t.phiN_sb,2)} kips<br>φN_bond = ${formatNumber(t.phiN_bond,2)} kips<br>φN_design = ${formatNumber(t.Nphi,2)} kips<br>DR = ${formatNumber(t.utilization || 0,3)}</td><td>${t.governingMode}</td></tr>`;
+        html += `<tr><td>Group demand (shear)</td><td>V_ux = ${formatNumber(s.Vux,2)} kips<br>V_uy = ${formatNumber(s.Vuy,2)} kips<br>V_u,res = ${formatNumber(s.Vu,2)} kips</td><td></td></tr>`;
+        html += `<tr><td>Group shear capacities</td><td>φV_steel = ${formatNumber(s.shearSteelDesign,2)} kips<br>φV_cbg = ${formatNumber(s.phiV_cb_g,2)} kips<br>φV_cp,g = ${formatNumber(s.phiV_cp_g,2)} kips<br>φV_design = ${formatNumber(s.Vphi,2)} kips<br>DR = ${formatNumber(s.utilization || 0,3)}${s.interactionUtil ? `<br>DR (N+V) = ${formatNumber(s.interactionUtil,3)}` : ""}</td><td>${s.governingMode}</td></tr>`;
+        html += "</table>";
+
+        if (anc.anchorsElastic && anc.anchorsElastic.length) {
+          html += "<div class='note'><strong>Elastic per-anchor forces (tension &amp; shear)</strong></div>";
+          html += "<table class='result-table'>";
+          html += "<tr><th>#</th><th>x (in)</th><th>y (in)</th><th>N (kips)</th><th>Vx (kips)</th><th>Vy (kips)</th></tr>";
+          anc.anchorsElastic.forEach((a, i) => {
+            html += `<tr><td>${i+1}</td><td>${formatNumber(a.x,2)}</td><td>${formatNumber(a.y,2)}</td><td>${formatNumber(a.N,3)}</td><td>${formatNumber(a.Vx,3)}</td><td>${formatNumber(a.Vy,3)}</td></tr>`;
+          });
+          html += "</table>";
+        }
+
+        html += "<div class='warning'>Anchor group strength per ACI 318 Ch.17; per-anchor forces from elastic distribution are for design/checking of individual bolts/washers and for your own sanity checks.</div>";
+        html += "</div>";
+      } else if (results.anchors && !results.anchors.ok) {
+        html += "<div class='result-section'><h2>Anchors</h2>";
+        html += `<div class="warning">${results.anchors.message}</div></div>`;
+      }
+
+      container.innerHTML = html;
+    }
+
+    function runDesign() {
+      const inputs = collectInputs();
+      const base = designBasePlate(inputs);
+
+      let elasticAnchorRes = null;
+
+      if (inputs.autoAnchorFromPlate && base.ok) {
+        let Nu_group;
+        if (inputs.Nu_anchor && inputs.Nu_anchor > 0) {
+          Nu_group = inputs.Nu_anchor;
+        } else {
+          Nu_group = approximateAnchorGroupTension(inputs);
+        }
+
+        let Vux_group;
+        if (inputs.Vux_anchor && inputs.Vux_anchor > 0) {
+          Vux_group = inputs.Vux_anchor;
+        } else {
+          Vux_group = Math.max(0, inputs.Vux || 0);
+        }
+
+        let Vuy_group;
+        if (inputs.Vuy_anchor && inputs.Vuy_anchor > 0) {
+          Vuy_group = inputs.Vuy_anchor;
+        } else {
+          Vuy_group = Math.max(0, inputs.Vuy || 0);
+        }
+
+        elasticAnchorRes = computeElasticAnchorForces(inputs, Nu_group, Vux_group, Vuy_group);
+
+        inputs.Nu_anchor  = elasticAnchorRes.Nu_group;
+        inputs.Vux_anchor = elasticAnchorRes.Vux_group;
+        inputs.Vuy_anchor = elasticAnchorRes.Vuy_group;
+      }
+
+      const anchors = designAnchorsACI(inputs, elasticAnchorRes);
+      let uplift = null;
+      if (anchors && anchors.ok && anchors.anchorsElastic && anchors.anchorsElastic.length) {
+        uplift = designBasePlateUplift(inputs, anchors.anchorsElastic);
+      }
+
+      const results = { base, anchors, uplift, inputs };
+      lastResults = results;
+      renderResults(results);
+
+      const rep = document.getElementById("report");
+      rep.style.display = "none";
+      rep.textContent = "";
+
+  updateDiagramFromInputs();
+
+    }
+
+    function generateReport() {
+      const rep = document.getElementById("report");
+      if (!lastResults || !lastResults.base || !lastResults.base.ok) {
+        rep.textContent = "No successful design results available. Run the design first.";
+        rep.style.display = "block";
+        return;
+      }
+
+      const r = lastResults;
+      const bp = r.base.plate;
+      const bearing = r.base.bearing;
+      const anc = r.anchors && r.anchors.ok ? r.anchors : null;
+      const uplift = r.uplift && r.uplift.ok ? r.uplift : null;
+
+      function line(t) { return t + "\n"; }
+      function bold(t) { return "**" + t + "**"; }
+      function num(x,d) { return (x==null || isNaN(x)) ? "-" : x.toFixed(d); }
+
+      let out = "";
+      out += line("BASE PLATE & ANCHOR DESIGN REPORT");
+      out += line("=================================");
+      out += "\n";
+      out += line("1. INPUT SUMMARY");
+      out += line("   1.1 Base Plate & Column");
+      out += line(`       Plate: B = ${num(bp.B,2)} in, N = ${num(bp.N,2)} in, t_p = ${num(bp.tProvided,3)} in`);
+      out += line(`       Fy(plate) = ${num(bp.Fy,1)} ksi`);
+      out += line(`       Column proj.: m = ${num(bp.m,2)} in, n = ${num(bp.n,2)} in, n' ≈ ${num(bp.nPrime,2)} in`);
+      out += line(`       A1 = B·N = ${num(bp.A1,1)} in²`);
+      out += "\n";
+      out += line("   1.2 Loads at Base (factored)");
+      out += line(`       Pu = ${num(bp.Pu,2)} kips (+compression)`);
+      out += line(`       Mux = ${num(r.inputs.Mux || 0,2)} kip-in`);
+      out += line(`       Muy = ${num(r.inputs.Muy || 0,2)} kip-in`);
+      out += line(`       Vux = ${num(r.inputs.Vux || 0,2)} kips`);
+      out += line(`       Vuy = ${num(r.inputs.Vuy || 0,2)} kips`);
+      out += "\n";
+
+      if (bearing) {
+        out += line("2. CONCRETE BEARING CHECK");
+        out += line("   2.1 Strength");
+        out += line("       ϕP_n = ϕ · 0.85 · f'_c · A1 / 1000 (kips)");
+        out += line(`           ϕ = ${num(bearing.phic,2)}, f'_c = ${num(bearing.fc,0)} psi, A1 = ${num(bp.A1,1)} in²`);
+        out += line(`           P_n = 0.85 · ${num(bearing.fc,0)} · ${num(bp.A1,1)} / 1000 = ${num(bearing.Pn,1)} kips`);
+        out += line(`           ϕP_n = ${num(bearing.phiPn,1)} kips`);
+        out += line(`           Pu = ${num(bp.Pu,2)} kips`);
+        const br = bearing.demandRatio || 0;
+        const brLine = `       DR = Pu / ϕP_n = ${num(br,3)}`;
+        out += line(br > 1.0 ? bold(brLine) : brLine);
+        out += "\n";
+      }
+
+      out += line("3. BASE PLATE THICKNESS – BIAXIAL (DG1-style)");
+      out += line("   3.1 Axial-only");
+      if (bp.tRequiredAxial != null) {
+        out += line("       t_req,axial = l · sqrt(2·Pu / (ϕ_b·Fy·B·N))");
+        out += line(`           l = ${num(bp.l_axial,2)} in, Pu = ${num(bp.Pu,2)} kips, Fy = ${num(bp.Fy,1)} ksi`);
+        out += line(`           t_req,axial = ${num(bp.tRequiredAxial,3)} in`);
+      } else {
+        out += line("       Not evaluated (Pu ≤ 0 or l ≤ 0).");
+      }
+      out += "\n";
+
+      function axisReport(name, axis) {
+        if (!axis || axis.tReq == null) return "";
+        let txt = "";
+        txt += line(`   3.2 ${name} bending`);
+        txt += line(`       e = M / Pu = ${num(axis.e,2)} in`);
+        txt += line(`       e_crit ≈ ${num(axis.ecrit,2)} in → case: ${axis.mode}`);
+        txt += line(`       Y ≈ ${num(axis.Y,2)} in, f_p ≈ ${num(axis.fp,3)} ksi`);
+        txt += line("       t_req from DG1-type eqns (small/large moment cases):");
+        txt += line(`           t_req = ${num(axis.tReq,3)} in`);
+        txt += "\n";
+        return txt;
+      }
+
+      out += axisReport("x-axis (M_y)", bp.perAxis.x);
+      out += axisReport("y-axis (M_x)", bp.perAxis.y);
+
+      out += line("   3.3 Thickness summary");
+      out += line(`       t_req,axial = ${num(bp.tRequiredAxial,3)} in`);
+      out += line(`       t_req,x     = ${bp.perAxis.x && bp.perAxis.x.tReq != null ? num(bp.perAxis.x.tReq,3) : "-" } in`);
+      out += line(`       t_req,y     = ${bp.perAxis.y && bp.perAxis.y.tReq != null ? num(bp.perAxis.y.tReq,3) : "-" } in`);
+      out += line(`       t_req,final = ${num(bp.tRequiredFinal,3)} in`);
+      const plateDR = (bp.tRequiredFinal && bp.tProvided) ? bp.tRequiredFinal / bp.tProvided : null;
+      const plateLine = `       DR = t_req,final / t_provided = ${plateDR != null ? num(plateDR,3) : "-"}`;
+      out += line(plateDR != null && plateDR > 1.0 ? bold(plateLine) : plateLine);
+      out += "\n";
+      if (uplift) {
+        out += line("3A. BASE PLATE IN UPLIFT (ANCHOR TENSION)");
+        out += line("   3A.1 Method");
+        out += line("       Treat each tensioned anchor outside the column footprint as a line load on a cantilever strip of the plate:");
+        out += line("           φ · Fy · b_eff · t_p^2 / 4 ≥ N_i · a_i");
+        out += line("           t_req,i = sqrt(4 · N_i · a_i / (φ · Fy · b_eff))");
+        out += line("       b_eff is truncated by nearest anchors and by the plate edge in the perpendicular direction.");
+        out += "\n";
+
+        const c = uplift.controlling;
+        if (c) {
+          out += line("   3A.2 Controlling anchor");
+          out += line(`       Anchor #${c.index+1}: N_i = ${num(c.N,3)} kips, a_i = ${num(c.a,2)} in, b_eff = ${num(c.beff,2)} in`);
+          out += line("       Thickness check:");
+          out += line("           t_req,i = sqrt(4 · N_i · a_i / (φ · Fy · b_eff))");
+          out += line(`                    = sqrt(4 · ${num(c.N,3)} · ${num(c.a,2)} / (${num(uplift.phi_b,2)} · ${num(bp.Fy,1)} · ${num(c.beff,2)}))`);
+          out += line(`                    ≈ ${num(c.tReq,3)} in`);
+          const DRu = c.DR != null ? c.DR : null;
+          const lineDRu = `       DR = M_u / φM_n = ${DRu != null ? num(DRu,3) : "-"}`;
+          out += line(DRu != null && DRu > 1.0 ? bold(lineDRu) : lineDRu);
+          out += "\n";
+        }
+
+        out += line("   3A.3 Per-anchor uplift summary");
+        uplift.perAnchor.forEach(a => {
+          out += line(`       Anchor #${a.index+1}: N_i = ${num(a.N,3)} kips, a_i = ${num(a.a,2)} in, b_eff = ${num(a.beff,2)} in`);
+          out += line(`           t_req,i ≈ ${num(a.tReq,3)} in, DR ≈ ${a.DR != null ? num(a.DR,3) : "-"}`);
+        });
+        out += "\n";
+      }
+
+      if (anc) {
+        const t = anc.tension;
+        const s = anc.shear;
+
+        out += line("4. ANCHOR TENSION – ACI 318 Ch.17");
+        out += line("   4.1 Concrete breakout");
+        out += line("       N_cb,g = k_c sqrt(f'_c) h_ef^1.5 (A_Nc / A_Nco) ψ_ed,N ψ_ec,N ψ_c,N ψ_cp,N / 1000");
+        out += line(`           k_c = ${num(kc_tension(anc.inputSummary.anchorSystem),2)}, f'_c = ${num(anc.inputSummary.fc,0)} psi`);
+        out += line(`           h_ef = ${num(anc.inputSummary.hef,2)} in, A_Nco = ${num(t.ANco,1)} in², A_Nc = ${num(t.ANc,1)} in²`);
+        out += line(`           ψ_ed,N = ${num(t.psi_edN,3)}, ψ_c,N = ${num(t.psi_cN,3)}`);
+        out += line(`           ϕN_cb,g = ${num(t.phiN_cb,2)} kips`);
+        out += "\n";
+
+        out += line("   4.2 Steel tension");
+        out += line("       N_sa = n A_se,N f_u / 1000; ϕ = 0.75");
+        out += line(`           n = ${anc.inputSummary.nAnch}, A_se,N = ${num(anc.inputSummary.As,4)} in², f_u = ${num(r.inputs.anchor_fu || 0,1)} ksi`);
+        out += line(`           ϕN_sa = ${num(t.phiN_steel,2)} kips`);
+        out += "\n";
+
+        out += line("   4.3 Pullout / side-face blowout (approx)");
+        out += line(`           ϕN_pullout ≈ ${num(t.phiN_pullout,2)} kips`);
+        out += line(`           ϕN_sb ≈ ${num(t.phiN_sb,2)} kips`);
+        out += "\n";
+
+        if (t.phiN_bond != null) {
+          out += line("   4.4 Adhesive bond (approx)");
+          out += line("       N_bond,nom = τ_bond,des π d_a h_ef n / 1000; ϕ ≈ 0.65");
+          out += line(`           τ_bond,des = ${num(anc.bond.tau,0)} psi`);
+          out += line(`           ϕN_bond ≈ ${num(t.phiN_bond,2)} kips`);
+          out += "\n";
+        }
+
+        out += line("   4.5 Tension summary");
+        out += line(`           N_u = ${num(t.Nu,2)} kips`);
+        out += line(`           Governing ϕN = ${num(t.Nphi,2)} kips (${t.governingMode})`);
+        const tDR = t.utilization != null ? t.utilization : null;
+        const tLine = `           DR = N_u / ϕN = ${tDR != null ? num(tDR,3) : "-"}`;
+        out += line(tDR != null && tDR > 1.0 ? bold(tLine) : tLine);
+        out += "\n";
+
+        out += line("5. ANCHOR SHEAR – ACI 318 Ch.17");
+        out += line("   5.1 Concrete shear breakout (approx)");
+        out += line("       V_cb,g = k_c,V sqrt(f'_c) h_ef^1.5 (A_Vc / A_Vco) ψ_c,V ψ_ed,V ψ_h,V / 1000");
+        out += line(`           ϕV_cb,g ≈ ${num(s.phiV_cb_g,2)} kips`);
+        out += "\n";
+
+        out += line("   5.2 Concrete pryout (approx)");
+        out += line("       V_cp,g = k_cp N_cb,g; ϕ ≈ 0.70");
+        out += line(`           ϕV_cp,g ≈ ${num(s.phiV_cp_g,2)} kips`);
+        out += "\n";
+
+        out += line("   5.3 Steel shear");
+        out += line("       V_sa = n 0.6 f_u A_se,V / 1000; ϕV_sa,des = ϕ · 0.80 · V_sa");
+        out += line(`           ϕV_sa,des = ${num(s.shearSteelDesign,2)} kips`);
+        out += "\n";
+
+        out += line("   5.4 Shear summary");
+        out += line(`           V_u,res = ${num(s.Vu,2)} kips`);
+        out += line(`           Governing ϕV = ${num(s.Vphi,2)} kips (${s.governingMode})`);
+        const sDR = s.utilization != null ? s.utilization : null;
+        const sLine = `           DR = V_u / ϕV = ${sDR != null ? num(sDR,3) : "-"}`;
+        out += line(sDR != null && sDR > 1.0 ? bold(sLine) : sLine);
+        out += "\n";
+
+        if (anc.anchorsElastic && anc.anchorsElastic.length) {
+          out += line("6. ELASTIC PER-ANCHOR FORCES (from group N_u, V_u and moments M_x, M_y)");
+          out += line("   Assumptions:");
+          out += line("       • Total group tension N_u is taken from user input (Nu_anchor) or |P_u| if left blank and P_u < 0.");
+          out += line("       • Moments M_x, M_y redistribute N_u among anchors via elastic theory; they do not change the total N_u.");
+          out += line("       • Anchors only carry tension (compression at an anchor location is ignored).");
+          out += "\n";
+          anc.anchorsElastic.forEach((a, i) => {
+            out += line(`   Anchor ${i+1}: x = ${num(a.x,2)} in, y = ${num(a.y,2)} in`);
+            out += line(`       N_i  = ${num(a.N,3)} kips`);
+            out += line(`       V_ix = ${num(a.Vx,3)} kips`);
+            out += line(`       V_iy = ${num(a.Vy,3)} kips`);
+            out += "\n";
+          });
+        }
+      }
+
+      out += line("7. COMPONENT SUMMARY (Controlling Limit States)");
+      out += line("   Base plate:");
+      if (bp.tRequiredFinal != null && bp.tProvided != null) {
+        const plDR = bp.tRequiredFinal / bp.tProvided;
+        const plLine = `       Plate thickness: t_req,final = ${num(bp.tRequiredFinal,3)} in, t_provided = ${num(bp.tProvided,3)} in, DR = ${num(plDR,3)}`;
+        out += line(plDR > 1.0 ? bold(plLine) : plLine);
+      } else {
+        out += line("       Plate thickness: insufficient data.");
+      }
+      if (bearing) {
+        const br = bearing.demandRatio || 0;
+        const cLine = `       Concrete bearing: DR = ${num(br,3)}`;
+        out += line(br > 1.0 ? bold(cLine) : cLine);
+      }
+
+      if (uplift && uplift.controlling) {
+        const c = uplift.controlling;
+        const uDR = c.DR != null ? c.DR : null;
+        const uLine = `       Plate in uplift (anchor tension): controls at anchor #${c.index+1}, DR ≈ ${uDR != null ? num(uDR,3) : "-"}`;
+        out += line(uDR != null && uDR > 1.0 ? bold(uLine) : uLine);
+      }
+
+      if (anc) {
+        const tDR = anc.tension.utilization != null ? anc.tension.utilization : null;
+        const sDR = anc.shear.utilization != null ? anc.shear.utilization : null;
+        out += line("   Anchors:");
+        if (tDR != null) {
+          const tLine = `       Tension: mode = ${anc.tension.governingMode}, DR = ${num(tDR,3)}`;
+          out += line(tDR > 1.0 ? bold(tLine) : tLine);
+        }
+        if (sDR != null) {
+          const sLine = `       Shear:   mode = ${anc.shear.governingMode}, DR = ${num(sDR,3)}`;
+          out += line(sDR > 1.0 ? bold(sLine) : sLine);
+        }
+      } else {
+        out += line("   Anchors: not evaluated.");
+      }
+
+      out += "\n";
+      out += line("8. NOTES");
+      out += line("   • Adhesive τ_bond,des are hard-coded approximations; replace with ESR values for the exact configuration.");
+      out += line("   • ψ- and k_c-factors are representative of ACI 318 Ch.17; confirm for the edition you are using.");
+      out += line("   • Elastic anchor forces are for rational distribution; group strength is still checked per ACI group equations.");
+      out += line("   • Uplift plate check is a simplified DG1-style strip model; calibrate b_eff and φ as needed to your office standard.");
+
+      rep.textContent = out;
+      rep.style.display = "block";
+    }
+  </script>
+</body>
+</html>

@@ -3,7 +3,8 @@
   "workspaces": [
     "toolbox_app/ui-core",
     "toolbox_app/tools/bth_spreader_padeye/frontend",
-    "toolbox_app/tools/tower_crane_foundation/frontend"
+    "toolbox_app/tools/tower_crane_foundation/frontend",
+    "toolbox_app/tools/aci318_25_concrete_design/frontend"
   ],
   "scripts": {
     "dev": "npm run dev --workspaces",

@@ -287,3 +287,163 @@ main {
 .p-sm { padding: var(--spacing-sm); }
 .p-md { padding: var(--spacing-md); }
 .p-lg { padding: var(--spacing-lg); }
+
+/* ACI 318-25 Concrete Design Tool */
+.aci318-tool {
+  --aci-fg: var(--color-gray-900);
+  --aci-muted: var(--color-gray-600);
+  --aci-border: var(--color-gray-300);
+  --aci-bg: var(--color-white);
+  --aci-panel: var(--color-gray-100);
+  --aci-btn: var(--color-gray-900);
+  --aci-btn-fg: var(--color-white);
+  color: var(--aci-fg);
+  padding-bottom: var(--spacing-2xl);
+}
+.aci318-tool .tabs {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin: var(--spacing-md) 0;
+}
+.aci318-tool .tab {
+  padding: 8px 10px;
+  border: 1px solid var(--aci-border);
+  background: var(--aci-bg);
+  cursor: pointer;
+  border-radius: var(--border-radius-md);
+  font-size: var(--font-size-sm);
+}
+.aci318-tool .tab.active {
+  background: var(--aci-panel);
+  font-weight: 600;
+}
+.aci318-tool .grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 850px) {
+  .aci318-tool .grid {
+    grid-template-columns: 1fr;
+  }
+}
+.aci318-tool .field {
+  border: 1px solid var(--aci-border);
+  border-radius: var(--border-radius-lg);
+  padding: 10px;
+  background: var(--aci-bg);
+}
+.aci318-tool .field label {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--aci-muted);
+  margin: 0 0 6px;
+}
+.aci318-tool .field .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.aci318-tool .field input,
+.aci318-tool .field select {
+  flex: 1;
+  padding: 8px;
+  font-size: var(--font-size-sm);
+}
+.aci318-tool .field .units {
+  font-size: var(--font-size-xs);
+  color: var(--aci-muted);
+  white-space: nowrap;
+}
+.aci318-tool .actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.aci318-tool button {
+  border: 1px solid var(--color-black);
+  background: var(--aci-btn);
+  color: var(--aci-btn-fg);
+  border-radius: var(--border-radius-md);
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+.aci318-tool button.secondary {
+  background: var(--aci-bg);
+  color: var(--aci-fg);
+  border: 1px solid var(--aci-border);
+}
+.aci318-tool button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.aci318-tool .panel {
+  border: 1px solid var(--aci-border);
+  border-radius: var(--border-radius-lg);
+  padding: 12px;
+  background: var(--aci-panel);
+  margin: 10px 0;
+}
+.aci318-tool pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+}
+.aci318-tool .kv {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+.aci318-tool .kv div {
+  font-size: var(--font-size-xs);
+}
+.aci318-tool .kv .k {
+  color: var(--aci-muted);
+}
+.aci318-tool .iframeWrap {
+  border: 1px solid var(--aci-border);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  background: var(--aci-bg);
+  margin-top: 10px;
+}
+.aci318-tool .iframeWrap iframe {
+  width: 100%;
+  height: 720px;
+  border: 0;
+}
+.aci318-tool .error {
+  color: var(--color-danger-dark);
+  font-size: var(--font-size-sm);
+}
+.aci318-tool .sub {
+  color: var(--aci-muted);
+  font-size: var(--font-size-xs);
+}
+.aci318-tool table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.aci318-tool th,
+.aci318-tool td {
+  font-size: var(--font-size-xs);
+  padding: 6px;
+  border-bottom: 1px solid var(--aci-border);
+  text-align: left;
+  vertical-align: middle;
+}
+.aci318-tool th {
+  color: var(--aci-muted);
+  font-weight: 600;
+  background: var(--aci-bg);
+}
+.aci318-tool input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
