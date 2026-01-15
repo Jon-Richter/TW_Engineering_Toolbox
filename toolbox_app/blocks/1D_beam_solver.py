@@ -82,7 +82,7 @@ class BeamModel(BaseModel):
     point_moments: List[PointMoment] = Field(default_factory=list)
 
     mesh_max_element_length: float = Field(
-        2.0,
+        0.1,
         gt=0,
         description="Mesh target max element length (ft for Imperial, m for SI). Smaller -> more accuracy for diagrams/deflections.",
     )
