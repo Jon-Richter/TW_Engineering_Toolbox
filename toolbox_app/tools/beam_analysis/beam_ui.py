@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 from PySide6 import QtCore, QtWidgets
 
 
@@ -56,6 +57,7 @@ class BeamAnalysisWindow(QtWidgets.QMainWindow):
         super().__init__(parent)
         self.setWindowTitle("Beam Analysis (Continuous Beam FEM)")
         self.setMinimumSize(1100, 700)
+        self.resize(int(1100 * 1.2), 700)
 
         self._output_dir = output_dir
         self._defaults = defaults or UiDefaults()
@@ -123,15 +125,19 @@ class BeamAnalysisWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(jbox, 3)
 
         tbox = QtWidgets.QGroupBox("Loads (global X)")
-        tbox.setMinimumHeight(max(self.spans_table.minimumHeight(), self.joints_table.minimumHeight()))
+        min_input_table_h = max(self.spans_table.minimumHeight(), self.joints_table.minimumHeight())
+        # This panel has tabs + buttons + sign note, so it needs extra height to keep the tables usable.
+        tbox.setMinimumHeight(min_input_table_h + 120)
         tl = QtWidgets.QVBoxLayout(tbox)
         self.load_tabs = QtWidgets.QTabWidget()
+        self.load_tabs.setMinimumHeight(min_input_table_h + 60)
 
         # Distributed loads
         self.dl_table = QtWidgets.QTableWidget()
         self.dl_table.setColumnCount(4)
         self.dl_table.setHorizontalHeaderLabels(["x_start", "x_end", "w_start", "w_end"])
         self.dl_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.dl_table.setMinimumHeight(min_input_table_h)
         dl_page = QtWidgets.QWidget()
         dl_l = QtWidgets.QVBoxLayout(dl_page)
         dl_l.addWidget(self.dl_table)
@@ -149,6 +155,7 @@ class BeamAnalysisWindow(QtWidgets.QMainWindow):
         self.pl_table.setColumnCount(2)
         self.pl_table.setHorizontalHeaderLabels(["x", "P"])
         self.pl_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.pl_table.setMinimumHeight(min_input_table_h)
         pl_page = QtWidgets.QWidget()
         pl_l = QtWidgets.QVBoxLayout(pl_page)
         pl_l.addWidget(self.pl_table)
@@ -166,6 +173,7 @@ class BeamAnalysisWindow(QtWidgets.QMainWindow):
         self.pm_table.setColumnCount(2)
         self.pm_table.setHorizontalHeaderLabels(["x", "M"])
         self.pm_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.pm_table.setMinimumHeight(min_input_table_h)
         pm_page = QtWidgets.QWidget()
         pm_l = QtWidgets.QVBoxLayout(pm_page)
         pm_l.addWidget(self.pm_table)
@@ -418,15 +426,44 @@ class BeamAnalysisWindow(QtWidgets.QMainWindow):
 
         # supports / hinges
         support_offset = -y_limit * 0.12
+        edge_tol = L * 0.05
+
+        def draw_fixed_support(x: float) -> None:
+            wall_top = 0.0
+            wall_bot = support_offset
+            ax.plot([x, x], [wall_bot, wall_top], color="#333333", linewidth=2.0)
+
+            hatch_len = max(L * 0.02, 0.06)
+            hatch_drop = max(abs(wall_top - wall_bot) * 0.10, 0.04)
+
+            if x <= edge_tol:
+                dirs = [-1.0]
+            elif x >= (L - edge_tol):
+                dirs = [1.0]
+            else:
+                dirs = [-1.0, 1.0]
+
+            ys = np.linspace(wall_top - 0.02, wall_bot + 0.02, 4)
+            for d in dirs:
+                for yy in ys:
+                    ax.plot([x, x + d * hatch_len], [yy, yy - hatch_drop], color="#333333", linewidth=1.2)
+
         for s in data["supports"]:
             x = float(s["x"])
             if s["hinge"]:
                 ax.plot(x, 0, marker="o", markersize=5, markerfacecolor="white", color="#333333")
-            if s["v_fixed"]:
-                ax.plot(x, support_offset, marker="v", markersize=8, color="#333333")
+
+            v_fixed = bool(s.get("v_fixed"))
+            t_fixed = bool(s.get("t_fixed"))
+
+            if v_fixed and t_fixed:
+                draw_fixed_support(x)
+            elif v_fixed:
+                ax.plot(x, support_offset, marker="^", markersize=9, markerfacecolor="white", color="#333333")
             else:
                 ax.plot(x, support_offset, marker="o", markersize=4, markerfacecolor="white", color="#333333")
-            if s["t_fixed"]:
+
+            if t_fixed and not v_fixed:
                 ax.plot(x, support_offset, marker="s", markersize=6, color="#333333")
 
         # distributed loads (plot above the beam)
@@ -446,7 +483,7 @@ class BeamAnalysisWindow(QtWidgets.QMainWindow):
         for pl in data["point_loads"]:
             x = min(L, max(0.0, float(pl["x"])))
             P = float(pl["P"])
-            y = abs(P) * scale
+            y = min(y_limit * 0.95, max(abs(P) * scale * 1.35, y_limit * 0.30))
             ax.annotate(
                 "",
                 xy=(x, 0 if P >= 0 else y),
@@ -521,6 +558,101 @@ class BeamAnalysisWindow(QtWidgets.QMainWindow):
         if abs(left_new - left_current) > 1e-3:
             fig.subplots_adjust(left=left_new)
 
+    def _resample_diagram(self, x: List[float], y: List[float], target_points: int = 1200) -> tuple[List[float], List[float]]:
+        if not x or not y or len(x) != len(y) or target_points < 2:
+            return x, y
+
+        x_arr = np.asarray(x, dtype=float)
+        y_arr = np.asarray(y, dtype=float)
+        if x_arr.size < 3:
+            return x, y
+
+        if np.any(np.diff(x_arr) < 0):
+            idx = np.argsort(x_arr, kind="mergesort")
+            x_arr = x_arr[idx]
+            y_arr = y_arr[idx]
+
+        x_span = float(x_arr[-1] - x_arr[0])
+        x_tol = max(1e-12, abs(x_span) * 1e-12)
+
+        y_max = float(np.nanmax(y_arr))
+        y_min = float(np.nanmin(y_arr))
+        y_range = max(0.0, y_max - y_min)
+        close_tol = max(1e-12, y_range * 1e-4)
+        jump_tol = max(close_tol * 10.0, y_range * 1e-2)
+
+        # Collapse repeated x points that arise from per-element sampling. Preserve true jumps (e.g. point loads).
+        cx: List[float] = []
+        cy: List[float] = []
+        n = int(x_arr.size)
+        i = 0
+        while i < n:
+            j = i + 1
+            while j < n and abs(float(x_arr[j] - x_arr[i])) <= x_tol:
+                j += 1
+            if j == i + 1:
+                cx.append(float(x_arr[i]))
+                cy.append(float(y_arr[i]))
+            else:
+                ys = y_arr[i:j]
+                if float(np.nanmax(ys) - np.nanmin(ys)) <= close_tol:
+                    cx.append(float(x_arr[i]))
+                    cy.append(float(np.nanmean(ys)))
+                else:
+                    cx.append(float(x_arr[i]))
+                    cy.append(float(ys[0]))
+                    cx.append(float(x_arr[i]))
+                    cy.append(float(ys[-1]))
+            i = j
+
+        x2 = np.asarray(cx, dtype=float)
+        y2 = np.asarray(cy, dtype=float)
+        if x2.size < 3:
+            return cx, cy
+
+        x_span2 = float(x2[-1] - x2[0])
+        if x_span2 <= x_tol:
+            return cx, cy
+
+        dx = x_span2 / float(target_points - 1)
+
+        out_x: List[float] = []
+        out_y: List[float] = []
+
+        def append_segment(xs: np.ndarray, ys: np.ndarray) -> None:
+            if xs.size == 0:
+                return
+            if xs.size == 1 or float(xs[-1] - xs[0]) <= x_tol:
+                out_x.append(float(xs[0]))
+                out_y.append(float(ys[0]))
+                return
+
+            npts = int(max(2, round(float(xs[-1] - xs[0]) / dx) + 1))
+            xi = np.linspace(float(xs[0]), float(xs[-1]), npts)
+            yi = np.interp(xi, xs, ys)
+
+            if out_x and abs(out_x[-1] - float(xi[0])) <= x_tol:
+                xi = xi[1:]
+                yi = yi[1:]
+
+            out_x.extend([float(v) for v in xi])
+            out_y.extend([float(v) for v in yi])
+
+        start = 0
+        k = 0
+        while k < x2.size - 1:
+            is_jump = abs(float(x2[k + 1] - x2[k])) <= x_tol and abs(float(y2[k + 1] - y2[k])) >= jump_tol
+            if is_jump:
+                append_segment(x2[start : k + 1], y2[start : k + 1])
+                out_x.append(float(x2[k + 1]))
+                out_y.append(float(y2[k + 1]))
+                start = k + 1
+                k += 1
+            k += 1
+        append_segment(x2[start:], y2[start:])
+
+        return out_x, out_y
+
     def _render_plots(self, results: Optional[Dict[str, Any]] = None) -> None:
         if results:
             self._plot_load_diagram(self.ax_load, reactions=results.get("reactions", []))
@@ -532,17 +664,20 @@ class BeamAnalysisWindow(QtWidgets.QMainWindow):
             v = d["deflection_user"]
             labels = d.get("labels", {})
 
-            self.line_shear.set_data(x, V)
+            xV, VV = self._resample_diagram(x, V)
+            self.line_shear.set_data(xV, VV)
             self.ax_shear.set_ylabel(f"Shear ({labels.get('V','')})")
             self.ax_shear.relim()
             self.ax_shear.autoscale_view(scalex=False, scaley=True)
 
-            self.line_moment.set_data(x, M)
+            xM, MM = self._resample_diagram(x, M)
+            self.line_moment.set_data(xM, MM)
             self.ax_moment.set_ylabel(f"Moment ({labels.get('M','')})")
             self.ax_moment.relim()
             self.ax_moment.autoscale_view(scalex=False, scaley=True)
 
-            self.line_defl.set_data(x, v)
+            xv, vv = self._resample_diagram(x, v)
+            self.line_defl.set_data(xv, vv)
             self.ax_defl.set_xlabel(f"x ({labels.get('x','')})")
             self.ax_defl.set_ylabel(f"Defl. ({labels.get('v','')})")
             self.ax_defl.relim()

@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from .models import InputModel
 from .paths import make_run_dir, write_text_log
-from .shapes_db import ShapeDatabase, ShapeNotFoundError
+from toolbox_app.blocks.aisc_shapes_db import ShapeDatabase, ShapeNotFoundError
 from .design_axial import design_tension, design_compression
 from .design_shear import design_shear
 from .design_flexure import design_flexure

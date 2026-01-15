@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
-from .design_common import (
+from toolbox_app.blocks.steel_aisc_common import (
     factors_compression,
     factors_flexure,
     factors_shear,

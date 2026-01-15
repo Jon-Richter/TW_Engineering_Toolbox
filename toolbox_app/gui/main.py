@@ -908,7 +908,9 @@ class MainWindow(QMainWindow):
         if provider == "aisc_shapes_v16":
             try:
                 if self._aisc_labels_cache is None:
-                    from toolbox_app.tools.aisc_360_16_member_design.shapes_db import ShapeDatabase
+                    # Centralized AISC Shapes DB lives under toolbox_app.blocks.
+                    # (Tool-local shapes_db.py was removed; keep UI dropdowns working.)
+                    from toolbox_app.blocks.aisc_shapes_db import ShapeDatabase
 
                     db = ShapeDatabase()
                     self._aisc_labels_cache = db.list_labels_by_typecode()
